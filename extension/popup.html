@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clipnote</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <h1>clipnote</h1>
+        <p id="status" class="status">Loading current tab…</p>
+      </header>
+
+      <section id="notice" class="notice hidden"></section>
+
+      <section class="field-group">
+        <label for="serverUrl">Server</label>
+        <input id="serverUrl" type="text" value="http://127.0.0.1:8765" />
+      </section>
+
+      <section class="field-group">
+        <label for="url">URL</label>
+        <textarea id="url" rows="3"></textarea>
+      </section>
+
+      <section class="field-group">
+        <label for="selectedText">Selected text</label>
+        <textarea id="selectedText" rows="3" placeholder="optional excerpt from the page or link context"></textarea>
+      </section>
+
+      <section class="row">
+        <div class="field-group grow">
+          <label for="titleOverride">Title override</label>
+          <input id="titleOverride" type="text" placeholder="optional" />
+        </div>
+        <div class="field-group compact">
+          <label for="kind">Kind</label>
+          <select id="kind">
+            <option value="auto">Auto</option>
+            <option value="papers">Paper</option>
+            <option value="links">Link</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="actions">
+        <button id="previewBtn" class="secondary">Preview</button>
+        <button id="saveBtn" class="primary">Save</button>
+        <button id="openBtn" class="secondary hidden">Open</button>
+      </section>
+
+      <section id="result" class="result hidden">
+        <div id="resultBadges" class="badges"></div>
+
+        <div class="meta">
+          <div><strong>Title:</strong> <span id="resultTitle"></span></div>
+          <div><strong>Kind:</strong> <span id="resultKind"></span></div>
+          <div><strong>Source:</strong> <span id="resultSource"></span></div>
+          <div><strong>Path:</strong> <span id="resultPath"></span></div>
+          <div><strong>Tags:</strong> <span id="resultTags"></span></div>
+        </div>
+
+        <div class="block">
+          <strong>Summary</strong>
+          <p id="resultSummary"></p>
+        </div>
+
+        <div class="block">
+          <strong>Duplicates</strong>
+          <div class="duplicate-columns">
+            <div>
+              <div class="subtle-label">URL duplicates</div>
+              <ul id="resultDuplicateUrls"></ul>
+            </div>
+            <div>
+              <div class="subtle-label">Title duplicates</div>
+              <ul id="resultDuplicateTitles"></ul>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
