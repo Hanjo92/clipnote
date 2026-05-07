@@ -98,6 +98,9 @@ python3 clipnote.py recap --week --compare-previous --save-note
 
 clipnote includes a Chrome extension MVP so you do not have to open a terminal every time.
 
+Quick setup guide:
+- [`docs/EXTENSION_QUICKSTART.md`](docs/EXTENSION_QUICKSTART.md)
+
 ### Run the local server
 ```bash
 cd ~/Projects/clipnote
