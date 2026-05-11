@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Python syntax check
+        run: python -m py_compile clipnote.py clipnote_server.py
+
+      - name: Python tests
+        run: python -m unittest discover -s tests
+
+      - name: Validate extension manifest
+        run: python -m json.tool extension/manifest.json >/dev/null
+
+      - name: JavaScript syntax check
+        run: |
+          node --check extension/background.js
+          node --check extension/popup.js
+
+      - name: Verify extension assets
+        run: |
+          test -f extension/icon-16.png
+          test -f extension/icon-32.png
+          test -f extension/icon-48.png
+          test -f extension/icon-128.png
+
+      - name: Package extension
+        run: python scripts/package_extension.py --output /tmp/clipnote-extension.zip

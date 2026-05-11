@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clipnote"
+version = "0.1.0"
+description = "Save web pages and papers into structured Markdown notes"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "Hanjo92" }
+]
+dependencies = []
+
+[project.scripts]
+clipnote = "clipnote:main"
+clipnote-server = "clipnote_server:main"
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.8"
+]
+
+[tool.setuptools]
+py-modules = ["clipnote", "clipnote_server"]
