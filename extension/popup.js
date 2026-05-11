@@ -1,6 +1,7 @@
 const statusEl = document.getElementById('status');
 const noticeEl = document.getElementById('notice');
 const serverUrlEl = document.getElementById('serverUrl');
+const authTokenEl = document.getElementById('authToken');
 const urlEl = document.getElementById('url');
 const selectedTextEl = document.getElementById('selectedText');
 const titleOverrideEl = document.getElementById('titleOverride');
@@ -18,6 +19,10 @@ const resultTagsEl = document.getElementById('resultTags');
 const resultSummaryEl = document.getElementById('resultSummary');
 const resultDuplicateUrlsEl = document.getElementById('resultDuplicateUrls');
 const resultDuplicateTitlesEl = document.getElementById('resultDuplicateTitles');
+const DEFAULT_SERVER_URL = 'http://127.0.0.1:8765';
+const REQUEST_TIMEOUT_MS = 15000;
+const ALLOWED_SERVER_HOSTS = new Set(['127.0.0.1', 'localhost']);
+const ALLOWED_SERVER_PORT = '8765';
 let openButtonMode = 'open';
 
 function setStatus(message, isError = false) {
@@ -50,16 +55,40 @@ function setOpenButton(mode = 'open', visible = true) {
 }
 
 function normalizeServerUrl(raw) {
-  return raw.trim().replace(/\/$/, '');
+  let parsed;
+  try {
+    parsed = new URL(String(raw || '').trim());
+  } catch (error) {
+    throw new Error('Server URL must be http://127.0.0.1:8765 or http://localhost:8765');
+  }
+  if (parsed.protocol !== 'http:' || !ALLOWED_SERVER_HOSTS.has(parsed.hostname) || parsed.port !== ALLOWED_SERVER_PORT) {
+    throw new Error('Server URL must be http://127.0.0.1:8765 or http://localhost:8765');
+  }
+  return parsed.origin;
 }
 
 async function getStoredServerUrl() {
   const stored = await chrome.storage.local.get(['aiNoteServerUrl']);
-  return stored.aiNoteServerUrl || 'http://127.0.0.1:8765';
+  try {
+    return normalizeServerUrl(stored.aiNoteServerUrl || DEFAULT_SERVER_URL);
+  } catch (error) {
+    return DEFAULT_SERVER_URL;
+  }
 }
 
 async function setStoredServerUrl(value) {
-  await chrome.storage.local.set({ aiNoteServerUrl: value.trim() });
+  const normalized = normalizeServerUrl(value);
+  await chrome.storage.local.set({ aiNoteServerUrl: normalized });
+  return normalized;
+}
+
+async function getStoredAuthToken() {
+  const stored = await chrome.storage.local.get(['aiNoteAuthToken']);
+  return stored.aiNoteAuthToken || '';
+}
+
+async function setStoredAuthToken(value) {
+  await chrome.storage.local.set({ aiNoteAuthToken: value.trim() });
 }
 
 function payloadFromForm() {
@@ -72,14 +101,44 @@ function payloadFromForm() {
 }
 
 async function postJson(path, payload) {
-  const base = normalizeServerUrl(serverUrlEl.value || 'http://127.0.0.1:8765');
-  const response = await fetch(`${base}${path}`, {
+  const base = normalizeServerUrl(serverUrlEl.value || DEFAULT_SERVER_URL);
+  const headers = { 'Content-Type': 'application/json' };
+  const token = authTokenEl.value.trim();
+  if (token) {
+    headers['X-Clipnote-Token'] = token;
+  }
+  const { response, data } = await fetchJson(`${base}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload),
   });
-  const data = await response.json();
   return { ok: response.ok && !!data.ok, status: response.status, data };
+}
+
+async function fetchJson(url, options) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const text = await response.text();
+    if (!text.trim()) {
+      throw new Error('Local clipnote server returned an empty response');
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (error) {
+      throw new Error('Local clipnote server returned a non-JSON response');
+    }
+    return { response, data };
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Local clipnote server timed out');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function openSavedPath(path) {
@@ -254,7 +313,17 @@ async function loadCurrentTab() {
 }
 
 serverUrlEl.addEventListener('change', async () => {
-  await setStoredServerUrl(serverUrlEl.value);
+  try {
+    serverUrlEl.value = await setStoredServerUrl(serverUrlEl.value);
+    setNotice('');
+  } catch (error) {
+    setStatus(error.message || 'Invalid server URL', true);
+    setNotice(error.message || 'Invalid server URL', 'error');
+  }
+});
+
+authTokenEl.addEventListener('change', async () => {
+  await setStoredAuthToken(authTokenEl.value);
 });
 
 previewBtn.addEventListener('click', runPreview);
@@ -266,5 +335,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (savedServerUrl) {
     serverUrlEl.value = savedServerUrl;
   }
+  authTokenEl.value = await getStoredAuthToken();
   loadCurrentTab();
 });

@@ -1,5 +1,7 @@
 # clipnote
 
+[![CI](https://github.com/Hanjo92/clipnote/actions/workflows/ci.yml/badge.svg)](https://github.com/Hanjo92/clipnote/actions/workflows/ci.yml)
+
 Save web pages and papers into structured Markdown notes.
 
 clipnote is a local-first tool for turning URLs into readable notes with:
@@ -60,6 +62,23 @@ It currently works especially well for an Obsidian vault, but the core idea is b
 
 ## Quick start
 
+### Install
+```bash
+cd ~/Projects/clipnote
+pipx install .
+```
+
+For local development:
+```bash
+python3 -m pip install -e ".[dev]"
+```
+
+To refresh an existing local install from this checkout:
+```bash
+cd ~/Projects/clipnote
+pipx install --force .
+```
+
 ### 1) Save a paper
 ```bash
 cd ~/Projects/clipnote
@@ -92,6 +111,11 @@ cd ~/Projects/clipnote
 python3 clipnote.py recap --week --compare-previous --save-note
 ```
 
+### Run tests
+```bash
+python3 -m unittest discover -s tests
+```
+
 ---
 
 ## Chrome extension
@@ -107,12 +131,16 @@ cd ~/Projects/clipnote
 python3 clipnote_server.py
 ```
 
+The server prints an `auth token`. Paste that token into the extension popup before previewing or saving.
+
 Default allowed origin:
 - `chrome-extension://dojaomlgohpahfibbdbjjnkkpbdoljnf`
 
 The extension manifest includes a fixed key, so unpacked loads keep the same extension ID.
 
 ### Load the extension
+Requires Chrome 127 or newer.
+
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
 3. Click **Load unpacked**
@@ -121,6 +149,11 @@ The extension manifest includes a fixed key, so unpacked loads keep the same ext
 
 Expected extension ID:
 - `dojaomlgohpahfibbdbjjnkkpbdoljnf`
+
+Package a release zip:
+```bash
+python3 scripts/package_extension.py --output dist/clipnote-extension.zip
+```
 
 ### Current extension flow
 - popup auto-loads the current tab URL
@@ -164,6 +197,8 @@ curl http://127.0.0.1:8765/health
 
 curl -X POST http://127.0.0.1:8765/preview \
   -H 'Content-Type: application/json' \
+  -H 'Origin: chrome-extension://dojaomlgohpahfibbdbjjnkkpbdoljnf' \
+  -H 'X-Clipnote-Token: <token printed by clipnote_server.py>' \
   -d '{"url":"https://arxiv.org/abs/2604.11978"}'
 ```
 

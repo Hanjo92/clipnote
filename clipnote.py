@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
+import tempfile
 import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -17,10 +19,14 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
+__version__ = "0.1.0"
+
 OBSIDIAN_CONFIG = Path.home() / "Library/Application Support/obsidian/obsidian.json"
-USER_AGENT = "clipnote/0.7 (+OpenClaw MVP)"
+USER_AGENT = f"clipnote/{__version__} (+OpenClaw MVP)"
 ARXIV_API = "https://export.arxiv.org/api/query?id_list={id_list}"
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+MAX_FETCH_BYTES = int(os.environ.get("CLIPNOTE_MAX_FETCH_BYTES", str(2 * 1024 * 1024)))
+FETCH_CHUNK_BYTES = 64 * 1024
 TITLE_PATTERNS = [
     re.compile(r'<meta[^>]+name=["\']citation_title["\'][^>]+content=["\'](.*?)["\']', re.I),
     re.compile(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](.*?)["\']', re.I),
@@ -63,6 +69,7 @@ THEME_NORMALIZATION = {
     "controls": "control",
     "orchestration": "orchestrate",
 }
+NOTE_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TITLE_SUFFIX_PATTERNS: dict[str, list[str]] = {
     "arxiv": [r"\s*[-|:–—]\s*arxiv\s*$"],
     "openai.com": [r"\s*[-|:–—]\s*openai\s*$", r"\s*\|\s*openai\s*$"],
@@ -171,15 +178,52 @@ def read_text(path: Path) -> str:
 def fetch_html(url: str) -> str:
     req = Request(url, headers={"User-Agent": USER_AGENT})
     with urlopen(req, timeout=15) as resp:
-        charset = resp.headers.get_content_charset() or "utf-8"
-        return resp.read().decode(charset, errors="replace")
+        return read_response_text(resp)
 
 
 def fetch_text(url: str) -> str:
     req = Request(url, headers={"User-Agent": USER_AGENT})
     with urlopen(req, timeout=15) as resp:
-        charset = resp.headers.get_content_charset() or "utf-8"
-        return resp.read().decode(charset, errors="replace")
+        return read_response_text(resp)
+
+
+def read_response_text(resp, max_bytes: int | None = None) -> str:
+    max_bytes = MAX_FETCH_BYTES if max_bytes is None else max_bytes
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = resp.read(min(FETCH_CHUNK_BYTES, max_bytes + 1 - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError("Fetched response is too large")
+    charset = resp.headers.get_content_charset() or "utf-8"
+    return b"".join(chunks).decode(charset, errors="replace")
+
+
+def write_note_file(path: Path, content: str, force: bool = False) -> bool:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not force:
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        except FileExistsError:
+            return False
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        return True
+
+    temp_name = ""
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False) as handle:
+            temp_name = handle.name
+            handle.write(content)
+        os.replace(temp_name, path)
+        return True
+    finally:
+        if temp_name and Path(temp_name).exists():
+            Path(temp_name).unlink()
 
 
 def html_to_text(fragment: str) -> str:
@@ -442,6 +486,17 @@ def parse_note_date(value: str) -> date | None:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def validate_note_date_text(value: str) -> None:
+    if not NOTE_DATE_PATTERN.match(value) or parse_note_date(value) is None:
+        raise ValueError("Date must use YYYY-MM-DD")
+
+
+def validate_http_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("URL must be an absolute http(s) URL")
 
 
 def collect_recap_items(vault_path: Path, start: date, end: date) -> list[RecapItem]:
@@ -857,6 +912,8 @@ def build_note(meta: NoteMeta) -> str:
 
 
 def prepare_note(url: str, vault_path: Path, note_date: str, explicit_kind: str, title_override: str | None, selected_text: str = "") -> NoteMeta:
+    validate_http_url(url)
+    validate_note_date_text(note_date)
     html = fetch_html(url)
     kind = infer_kind(url, explicit_kind)
     source = infer_source(url)
@@ -1008,7 +1065,11 @@ def run_dedupe_like(args: argparse.Namespace) -> int:
 def cmd_save(args: argparse.Namespace) -> int:
     vault_path = load_vault_path(args.vault_name, args.vault_path)
     note_date = args.date or date.today().isoformat()
-    meta = prepare_note(args.url, vault_path, note_date, args.kind, args.title)
+    try:
+        meta = prepare_note(args.url, vault_path, note_date, args.kind, args.title)
+    except ValueError as exc:
+        eprint(str(exc))
+        return 2
     print(f"vault: {vault_path}")
     print(f"kind: {meta.kind}")
     print(f"title: {meta.title}")
@@ -1042,12 +1103,10 @@ def cmd_save(args: argparse.Namespace) -> int:
             print(f"  - {path.relative_to(vault_path)}")
     if args.dry_run:
         return 0
-    meta.folder.mkdir(parents=True, exist_ok=True)
-    if meta.path.exists() and not args.force:
+    if not write_note_file(meta.path, build_note(meta), force=args.force):
         eprint(f"Refusing to overwrite existing note: {meta.path}")
         eprint("Use --force to overwrite or --dry-run to inspect.")
         return 2
-    meta.path.write_text(build_note(meta), encoding="utf-8")
     print("saved")
     return 0
 
@@ -1098,12 +1157,10 @@ def cmd_recap(args: argparse.Namespace) -> int:
         if args.dry_run:
             print(output, end="")
             return 0
-        note_path.parent.mkdir(parents=True, exist_ok=True)
-        if note_path.exists() and not args.force:
+        if not write_note_file(note_path, output, force=args.force):
             eprint(f"Refusing to overwrite existing recap note: {note_path}")
             eprint("Use --force to overwrite or --dry-run to inspect.")
             return 2
-        note_path.write_text(output, encoding="utf-8")
         print("saved")
         return 0
     if args.output:
