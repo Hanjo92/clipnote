@@ -11,7 +11,7 @@
     "128": "icon-128.png"
   },
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr6LMFWIpXGgDs/taJ66E5zAECm39UHlqn0sZyv8hP7v+3xh8T2pfX5Z9bNM0ykn9yh+UZ216aK1LC0NnZCnRZbwg/BkCB0+m5K/UiKCSPClHfKT8JMBmF6w8hNnd6Ur9Jjs6fMiw7wafm7+/nC2uHEwnL1XmbdzoHbrbrVLflDBzrdVQYuEs8lZawxt/k/lUv0fzqjiU/oufv0Jpv3Z2Mu95DaOVZ8h10RfHAefTHn66oCEczgoZLXVUxgsGF2SR7JG4eOcXHDRRglTqeuNc6DLWamh+5tDWutMfBLof2TlJTkJsmzr3cZ8IRG75gbU2GNKSLcYORA/cLNzV9zwVZwIDAQAB",
-  "permissions": ["activeTab", "contextMenus", "notifications", "storage"],
+  "permissions": ["activeTab", "contextMenus", "notifications", "scripting", "storage"],
   "host_permissions": [
     "http://127.0.0.1:8765/*",
     "http://localhost:8765/*"

@@ -820,6 +820,13 @@ def normalize_selected_text(text: str, max_len: int = 900) -> str:
     return text[:max_len].rstrip() + "…"
 
 
+def normalize_summary_override(text: str, max_len: int = 900) -> str:
+    text = normalize_summary_text(text)
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rstrip() + "…"
+
+
 def merge_arxiv_into_summary(summary: str, abstract: str, arxiv_meta: ArxivMeta | None) -> str:
     if arxiv_meta and arxiv_meta.summary:
         return sentenceish(normalize_summary_text(arxiv_meta.summary))
@@ -911,7 +918,15 @@ def build_note(meta: NoteMeta) -> str:
     )
 
 
-def prepare_note(url: str, vault_path: Path, note_date: str, explicit_kind: str, title_override: str | None, selected_text: str = "") -> NoteMeta:
+def prepare_note(
+    url: str,
+    vault_path: Path,
+    note_date: str,
+    explicit_kind: str,
+    title_override: str | None,
+    selected_text: str = "",
+    summary_override: str = "",
+) -> NoteMeta:
     validate_http_url(url)
     validate_note_date_text(note_date)
     html = fetch_html(url)
@@ -924,6 +939,10 @@ def prepare_note(url: str, vault_path: Path, note_date: str, explicit_kind: str,
             arxiv_meta = fetch_arxiv_meta(arxiv_id)
     title = clean_title(title_override or (arxiv_meta.title if arxiv_meta and arxiv_meta.title else "") or extract_title(html) or url, source)
     summary, why_save, points = derive_summary_fields(html, title, kind, source, arxiv_meta)
+    override = normalize_summary_override(summary_override)
+    if override:
+        summary = override
+        why_save = build_why_save(kind, source, summary)
     folder = vault_path / ("Papers" if kind == "papers" else "Links") / note_date
     filename = slugify_filename(title) + ".md"
     duplicate_urls, duplicate_titles = scan_duplicates(vault_path, title, url)
