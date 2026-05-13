@@ -37,7 +37,7 @@ If you change extension files later, click **Reload** on the extension card.
 
 Expected permission shape:
 - active tab access after clicking clipnote
-- context menus, notifications, and storage
+- context menus, notifications, scripting, and storage
 - localhost/127.0.0.1 access for the local server
 
 ---
@@ -97,7 +97,22 @@ Expected permission shape:
 
 ---
 
-## 6) Conflict test
+## 6) AI summary test
+
+Chrome built-in AI summaries require a Chrome version/profile where the Summarizer API is available. The model is checked only after you click **AI Summary**.
+
+1. Open an article page
+2. Highlight text, or leave nothing highlighted to use the visible page body
+3. Click the clipnote extension icon
+4. Click **AI Summary**
+5. Confirm the generated text appears in **AI summary**
+6. Click **Preview** or **Save** to use that summary in the note
+
+The extracted page body stays in Chrome. Only the generated summary override is sent to the local clipnote server when you preview or save.
+
+---
+
+## 7) Conflict test
 
 Try saving the same URL again.
 
@@ -107,7 +122,7 @@ You should see:
 
 ---
 
-## 7) If something fails
+## 8) If something fails
 
 Check these first:
 

@@ -4,8 +4,10 @@ const serverUrlEl = document.getElementById('serverUrl');
 const authTokenEl = document.getElementById('authToken');
 const urlEl = document.getElementById('url');
 const selectedTextEl = document.getElementById('selectedText');
+const aiSummaryEl = document.getElementById('aiSummary');
 const titleOverrideEl = document.getElementById('titleOverride');
 const kindEl = document.getElementById('kind');
+const aiSummaryBtn = document.getElementById('aiSummaryBtn');
 const previewBtn = document.getElementById('previewBtn');
 const saveBtn = document.getElementById('saveBtn');
 const openBtn = document.getElementById('openBtn');
@@ -21,6 +23,7 @@ const resultDuplicateUrlsEl = document.getElementById('resultDuplicateUrls');
 const resultDuplicateTitlesEl = document.getElementById('resultDuplicateTitles');
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:8765';
 const REQUEST_TIMEOUT_MS = 15000;
+const AI_SUMMARY_INPUT_LIMIT = 12000;
 const ALLOWED_SERVER_HOSTS = new Set(['127.0.0.1', 'localhost']);
 const ALLOWED_SERVER_PORT = '8765';
 let openButtonMode = 'open';
@@ -41,6 +44,7 @@ function setNotice(message = '', kind = 'info') {
 }
 
 function setBusy(isBusy) {
+  aiSummaryBtn.disabled = isBusy;
   previewBtn.disabled = isBusy;
   saveBtn.disabled = isBusy;
   openBtn.disabled = isBusy;
@@ -97,7 +101,115 @@ function payloadFromForm() {
     kind: kindEl.value,
     titleOverride: titleOverrideEl.value.trim() || null,
     selectedText: selectedTextEl.value.trim() || '',
+    summaryOverride: aiSummaryEl.value.trim() || '',
   };
+}
+
+function truncateAiSummaryInput(text) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (normalized.length <= AI_SUMMARY_INPUT_LIMIT) {
+    return normalized;
+  }
+  return `${normalized.slice(0, AI_SUMMARY_INPUT_LIMIT).trim()}…`;
+}
+
+async function getActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.id) {
+    throw new Error('Could not read current tab');
+  }
+  return tab;
+}
+
+async function extractActiveTabText(tabId) {
+  const [injection] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      const selected = window.getSelection?.()?.toString().trim() || '';
+      if (selected) {
+        return { text: selected, label: 'selected text' };
+      }
+      const article = document.querySelector('article, main');
+      return { text: (article?.innerText || document.body?.innerText || '').trim(), label: 'page body' };
+    },
+  });
+  const result = injection?.result;
+  if (result && typeof result === 'object') {
+    return {
+      text: String(result.text || '').trim(),
+      label: result.label === 'selected text' ? 'selected text' : 'page body',
+    };
+  }
+  return { text: String(result || '').trim(), label: 'page body' };
+}
+
+async function getAiSummarySource() {
+  const selectedText = selectedTextEl.value.trim();
+  if (selectedText) {
+    return { text: selectedText, label: 'selected text' };
+  }
+  const tab = await getActiveTab();
+  const source = await extractActiveTabText(tab.id);
+  if (!source.text) {
+    throw new Error('No selected text or readable page body found');
+  }
+  return source;
+}
+
+async function createGeminiNanoSummary(text, onProgress = () => {}) {
+  const summarizer = await createGeminiNanoSummarizer(onProgress);
+  try {
+    return await summarizeWithGeminiNano(summarizer, text);
+  } finally {
+    destroySummarizer(summarizer);
+  }
+}
+
+async function createGeminiNanoSummarizer(onProgress = () => {}) {
+  const summarizerApi = globalThis.Summarizer;
+  if (!summarizerApi || typeof summarizerApi.availability !== 'function' || typeof summarizerApi.create !== 'function') {
+    throw new Error('Chrome built-in Summarizer API is not available in this browser');
+  }
+
+  const availability = await summarizerApi.availability();
+  if (availability === 'unavailable') {
+    throw new Error('Gemini Nano summarization is unavailable on this device or Chrome profile');
+  }
+  if (availability === 'downloading') {
+    onProgress('Downloading Gemini Nano…');
+  } else if (availability === 'downloadable') {
+    onProgress('Preparing Gemini Nano…');
+  }
+
+  return summarizerApi.create({
+    type: 'tldr',
+    format: 'plain-text',
+    length: 'medium',
+    monitor(monitor) {
+      monitor?.addEventListener?.('downloadprogress', (event) => {
+        if (typeof event.loaded === 'number') {
+          onProgress(`Downloading Gemini Nano… ${Math.round(event.loaded * 100)}%`);
+        }
+      });
+    },
+  });
+}
+
+async function summarizeWithGeminiNano(summarizer, text) {
+  const summary = await summarizer.summarize(truncateAiSummaryInput(text), {
+    context: 'Summarize this web page content for a personal research note.',
+  });
+  const normalized = String(summary || '').trim();
+  if (!normalized) {
+    throw new Error('Gemini Nano returned an empty summary');
+  }
+  return normalized;
+}
+
+function destroySummarizer(summarizer) {
+  if (summarizer && typeof summarizer.destroy === 'function') {
+    summarizer.destroy();
+  }
 }
 
 async function postJson(path, payload) {
@@ -284,6 +396,33 @@ async function runOpen() {
   }
 }
 
+async function runAiSummary() {
+  setBusy(true);
+  setStatus('Preparing AI summary…');
+  setNotice('');
+  let summarizer = null;
+  try {
+    if (navigator.userActivation && !navigator.userActivation.isActive) {
+      throw new Error('Click AI Summary to start Gemini Nano');
+    }
+    summarizer = await createGeminiNanoSummarizer((message) => {
+      setStatus(message);
+    });
+    const source = await getAiSummarySource();
+    setStatus(`Summarizing ${source.label}…`);
+    const summary = await summarizeWithGeminiNano(summarizer, source.text);
+    aiSummaryEl.value = summary;
+    setStatus('AI summary ready');
+    setNotice('AI summary is ready. Preview or save to use it in the note.', 'success');
+  } catch (error) {
+    setStatus(error.message || 'AI summary failed', true);
+    setNotice(error.message || 'AI summary failed', 'error');
+  } finally {
+    destroySummarizer(summarizer);
+    setBusy(false);
+  }
+}
+
 async function loadCurrentTab() {
   try {
     const stored = await chrome.storage.local.get(['aiNotePendingPreview']);
@@ -291,6 +430,7 @@ async function loadCurrentTab() {
     if (pending?.url) {
       urlEl.value = pending.url;
       selectedTextEl.value = pending.selectedText || '';
+      aiSummaryEl.value = '';
       titleOverrideEl.value = '';
       await chrome.storage.local.remove(['aiNotePendingPreview']);
       setStatus('Loaded from context menu preview');
@@ -304,6 +444,7 @@ async function loadCurrentTab() {
     }
     urlEl.value = tab.url;
     selectedTextEl.value = '';
+    aiSummaryEl.value = '';
     titleOverrideEl.value = '';
     setStatus('Current tab loaded');
     await runPreview();
@@ -326,6 +467,7 @@ authTokenEl.addEventListener('change', async () => {
   await setStoredAuthToken(authTokenEl.value);
 });
 
+aiSummaryBtn.addEventListener('click', runAiSummary);
 previewBtn.addEventListener('click', runPreview);
 saveBtn.addEventListener('click', runSave);
 openBtn.addEventListener('click', runOpen);

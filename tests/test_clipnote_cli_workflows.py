@@ -203,6 +203,33 @@ class ClipnoteCliWorkflowTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(data["error"], "bad_request")
 
+    def test_server_preview_applies_ai_summary_override(self):
+        html = """
+        <html>
+          <head>
+            <title>Example Article</title>
+            <meta name="description" content="Original server-side summary." />
+          </head>
+          <body><p>Page body that should not become the preview summary.</p></body>
+        </html>
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            with running_server(Path(tmp)) as server:
+                with mock.patch.object(clipnote, "fetch_html", return_value=html):
+                    status, data = post_json(
+                        server,
+                        "/preview",
+                        {
+                            "url": "https://example.com/article",
+                            "summaryOverride": " On-device Gemini Nano summary. ",
+                        },
+                        origin=clipnote_server.DEFAULT_ORIGIN,
+                        token="secret",
+                    )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(data["preview"]["summary"], "On-device Gemini Nano summary.")
+
 
 if __name__ == "__main__":
     unittest.main()

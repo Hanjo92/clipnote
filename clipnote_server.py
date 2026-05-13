@@ -113,12 +113,13 @@ def prepare_preview(payload: dict[str, Any]) -> dict[str, Any]:
     url = require_str(payload, "url")
     kind = payload.get("kind") or "auto"
     title_override = payload.get("titleOverride") or payload.get("title")
-    selected_text = payload.get("selectedText") or ""
+    selected_text = optional_str(payload, "selectedText")
+    summary_override = optional_str(payload, "summaryOverride")
     note_date = payload.get("date") or date.today().isoformat()
     validate_note_date(note_date)
     vault_name = payload.get("vaultName") or "AI"
     vault_path = clipnote.load_vault_path(vault_name, payload.get("vaultPath")).resolve()
-    meta = clipnote.prepare_note(url, vault_path, note_date, kind, title_override, selected_text)
+    meta = clipnote.prepare_note(url, vault_path, note_date, kind, title_override, selected_text, summary_override)
     return {
         "ok": True,
         "preview": note_meta_to_dict(meta, vault_path),
@@ -129,13 +130,14 @@ def save_note(payload: dict[str, Any]) -> dict[str, Any]:
     url = require_str(payload, "url")
     kind = payload.get("kind") or "auto"
     title_override = payload.get("titleOverride") or payload.get("title")
-    selected_text = payload.get("selectedText") or ""
+    selected_text = optional_str(payload, "selectedText")
+    summary_override = optional_str(payload, "summaryOverride")
     note_date = payload.get("date") or date.today().isoformat()
     validate_note_date(note_date)
     force = bool(payload.get("force", False))
     vault_name = payload.get("vaultName") or "AI"
     vault_path = clipnote.load_vault_path(vault_name, payload.get("vaultPath")).resolve()
-    meta = clipnote.prepare_note(url, vault_path, note_date, kind, title_override, selected_text)
+    meta = clipnote.prepare_note(url, vault_path, note_date, kind, title_override, selected_text, summary_override)
     relative_to_vault(meta.folder, vault_path)
     relative_to_vault(meta.path, vault_path)
     if meta.path.exists() and not force:
@@ -176,6 +178,13 @@ def require_str(payload: dict[str, Any], key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"Missing required string field: {key}")
+    return value.strip()
+
+
+def optional_str(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key) or ""
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string")
     return value.strip()
 
 

@@ -64,6 +64,13 @@ body {
   color: #d1d5db;
 }
 
+.label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 input,
 textarea,
 select,
@@ -120,6 +127,11 @@ button.primary {
 button.secondary {
   background: #374151;
   color: white;
+}
+
+button.inline-action {
+  padding: 6px 8px;
+  font-size: 12px;
 }
 
 #openBtn.hidden {
