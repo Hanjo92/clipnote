@@ -26,6 +26,14 @@
       </section>
 
       <section class="field-group">
+        <div class="label-row">
+          <label for="vaultPath">Vault path</label>
+          <button id="vaultPathBtn" class="secondary inline-action" type="button">Set</button>
+        </div>
+        <input id="vaultPath" type="text" placeholder="/Users/song/path/to/Obsidian vault" />
+      </section>
+
+      <section class="field-group">
         <label for="url">URL</label>
         <textarea id="url" rows="3"></textarea>
       </section>
@@ -38,7 +46,13 @@
       <section class="field-group">
         <div class="label-row">
           <label for="aiSummary">AI summary</label>
-          <button id="aiSummaryBtn" class="secondary inline-action" type="button">AI Summary</button>
+          <div class="inline-controls">
+            <select id="aiSummaryLanguage" aria-label="AI summary language">
+              <option value="ko" selected>Korean</option>
+              <option value="original">Original</option>
+            </select>
+            <button id="aiSummaryBtn" class="secondary inline-action" type="button">AI Summary</button>
+          </div>
         </div>
         <textarea id="aiSummary" rows="3" placeholder="optional summary override"></textarea>
       </section>
