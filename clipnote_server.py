@@ -174,6 +174,19 @@ def open_note(payload: dict[str, Any], vault_path: Path) -> dict[str, Any]:
     }
 
 
+def update_settings(payload: dict[str, Any], server: ThreadingHTTPServer) -> dict[str, Any]:
+    raw_vault_path = payload.get("vaultPath")
+    if raw_vault_path is None or raw_vault_path == "":
+        return {"ok": True, "vaultPath": str(Path(server.vault_path).resolve())}
+    if not isinstance(raw_vault_path, str) or not raw_vault_path.strip():
+        raise ValueError("vaultPath must be a non-empty string")
+    vault_path = Path(raw_vault_path).expanduser().resolve()
+    if not vault_path.exists() or not vault_path.is_dir():
+        raise ValueError("vaultPath must be an existing directory")
+    server.vault_path = vault_path
+    return {"ok": True, "vaultPath": str(vault_path)}
+
+
 def require_str(payload: dict[str, Any], key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -230,6 +243,9 @@ class AiNoteHandler(BaseHTTPRequestHandler):
                 self.respond_error(trust_error)
                 return
             payload = self.read_json_body()
+            if self.path == "/settings":
+                self.respond_json(update_settings(payload, self.server))
+                return
             vault_path = self.server_vault_path()
             if self.path == "/preview":
                 safe_payload = prepare_payload(payload, vault_path, self.allow_client_vault_path())

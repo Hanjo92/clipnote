@@ -2,11 +2,14 @@ const statusEl = document.getElementById('status');
 const noticeEl = document.getElementById('notice');
 const serverUrlEl = document.getElementById('serverUrl');
 const authTokenEl = document.getElementById('authToken');
+const vaultPathEl = document.getElementById('vaultPath');
 const urlEl = document.getElementById('url');
 const selectedTextEl = document.getElementById('selectedText');
 const aiSummaryEl = document.getElementById('aiSummary');
+const aiSummaryLanguageEl = document.getElementById('aiSummaryLanguage');
 const titleOverrideEl = document.getElementById('titleOverride');
 const kindEl = document.getElementById('kind');
+const vaultPathBtn = document.getElementById('vaultPathBtn');
 const aiSummaryBtn = document.getElementById('aiSummaryBtn');
 const previewBtn = document.getElementById('previewBtn');
 const saveBtn = document.getElementById('saveBtn');
@@ -44,6 +47,7 @@ function setNotice(message = '', kind = 'info') {
 }
 
 function setBusy(isBusy) {
+  vaultPathBtn.disabled = isBusy;
   aiSummaryBtn.disabled = isBusy;
   previewBtn.disabled = isBusy;
   saveBtn.disabled = isBusy;
@@ -95,6 +99,15 @@ async function setStoredAuthToken(value) {
   await chrome.storage.local.set({ aiNoteAuthToken: value.trim() });
 }
 
+async function getStoredVaultPath() {
+  const stored = await chrome.storage.local.get(['aiNoteVaultPath']);
+  return stored.aiNoteVaultPath || '';
+}
+
+async function setStoredVaultPath(value) {
+  await chrome.storage.local.set({ aiNoteVaultPath: value.trim() });
+}
+
 function payloadFromForm() {
   return {
     url: urlEl.value.trim(),
@@ -119,6 +132,21 @@ async function getActiveTab() {
     throw new Error('Could not read current tab');
   }
   return tab;
+}
+
+async function readActiveTabSelection(tabId) {
+  try {
+    const injections = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => window.getSelection?.()?.toString().trim() || '',
+    });
+    const selected = (injections || [])
+      .map((injection) => String(injection?.result || '').trim())
+      .find(Boolean);
+    return selected || '';
+  } catch (error) {
+    return '';
+  }
 }
 
 async function extractActiveTabText(tabId) {
@@ -212,6 +240,55 @@ function destroySummarizer(summarizer) {
   }
 }
 
+function selectedSummaryLanguage() {
+  return aiSummaryLanguageEl.value === 'ko' ? 'ko' : 'original';
+}
+
+async function createKoreanTranslator(onProgress = () => {}) {
+  const translatorApi = globalThis.Translator;
+  if (!translatorApi || typeof translatorApi.availability !== 'function' || typeof translatorApi.create !== 'function') {
+    throw new Error('Chrome built-in Translator API is not available in this browser');
+  }
+  const languagePair = { sourceLanguage: 'en', targetLanguage: 'ko' };
+  const availability = await translatorApi.availability(languagePair);
+  if (availability === 'unavailable') {
+    throw new Error('English to Korean translation is unavailable on this device or Chrome profile');
+  }
+  if (availability === 'downloading') {
+    onProgress('Downloading Korean translator…');
+  } else if (availability === 'downloadable') {
+    onProgress('Preparing Korean translator…');
+  }
+  return translatorApi.create({
+    ...languagePair,
+    monitor(monitor) {
+      monitor?.addEventListener?.('downloadprogress', (event) => {
+        if (typeof event.loaded === 'number') {
+          onProgress(`Downloading Korean translator… ${Math.round(event.loaded * 100)}%`);
+        }
+      });
+    },
+  });
+}
+
+async function translateSummaryIfNeeded(summary, translator) {
+  if (!translator) {
+    return summary;
+  }
+  const translated = await translator.translate(summary);
+  const normalized = String(translated || '').trim();
+  if (!normalized) {
+    throw new Error('Chrome Translator returned an empty summary');
+  }
+  return normalized;
+}
+
+function destroyTranslator(translator) {
+  if (translator && typeof translator.destroy === 'function') {
+    translator.destroy();
+  }
+}
+
 async function postJson(path, payload) {
   const base = normalizeServerUrl(serverUrlEl.value || DEFAULT_SERVER_URL);
   const headers = { 'Content-Type': 'application/json' };
@@ -260,6 +337,51 @@ async function openSavedPath(path) {
   const { ok, data } = await postJson('/open', { path });
   if (!ok) {
     throw new Error(data.message || data.error || 'Open failed');
+  }
+}
+
+async function loadVaultPathSettings() {
+  if (!authTokenEl.value.trim()) {
+    return;
+  }
+  try {
+    const { ok, data } = await postJson('/settings', {});
+    if (ok && data.vaultPath) {
+      vaultPathEl.value = data.vaultPath;
+      await setStoredVaultPath(data.vaultPath);
+    }
+  } catch (error) {
+    const stored = await getStoredVaultPath();
+    if (stored) {
+      vaultPathEl.value = stored;
+    }
+  }
+}
+
+async function saveVaultPathSettings() {
+  const vaultPath = vaultPathEl.value.trim();
+  if (!vaultPath) {
+    setStatus('Vault path is required', true);
+    setNotice('Vault path is required', 'error');
+    return;
+  }
+  setBusy(true);
+  setStatus('Saving vault path…');
+  setNotice('');
+  try {
+    const { ok, data } = await postJson('/settings', { vaultPath });
+    if (!ok) {
+      throw new Error(data.message || data.error || 'Vault path update failed');
+    }
+    vaultPathEl.value = data.vaultPath || vaultPath;
+    await setStoredVaultPath(vaultPathEl.value);
+    setStatus('Vault path saved');
+    setNotice('Vault path saved for this local clipnote server.', 'success');
+  } catch (error) {
+    setStatus(error.message || 'Vault path update failed', true);
+    setNotice(error.message || 'Vault path update failed', 'error');
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -401,9 +523,15 @@ async function runAiSummary() {
   setStatus('Preparing AI summary…');
   setNotice('');
   let summarizer = null;
+  let translator = null;
   try {
     if (navigator.userActivation && !navigator.userActivation.isActive) {
       throw new Error('Click AI Summary to start Gemini Nano');
+    }
+    if (selectedSummaryLanguage() === 'ko') {
+      translator = await createKoreanTranslator((message) => {
+        setStatus(message);
+      });
     }
     summarizer = await createGeminiNanoSummarizer((message) => {
       setStatus(message);
@@ -411,7 +539,8 @@ async function runAiSummary() {
     const source = await getAiSummarySource();
     setStatus(`Summarizing ${source.label}…`);
     const summary = await summarizeWithGeminiNano(summarizer, source.text);
-    aiSummaryEl.value = summary;
+    const finalSummary = await translateSummaryIfNeeded(summary, translator);
+    aiSummaryEl.value = finalSummary;
     setStatus('AI summary ready');
     setNotice('AI summary is ready. Preview or save to use it in the note.', 'success');
   } catch (error) {
@@ -419,6 +548,7 @@ async function runAiSummary() {
     setNotice(error.message || 'AI summary failed', 'error');
   } finally {
     destroySummarizer(summarizer);
+    destroyTranslator(translator);
     setBusy(false);
   }
 }
@@ -443,7 +573,7 @@ async function loadCurrentTab() {
       return;
     }
     urlEl.value = tab.url;
-    selectedTextEl.value = '';
+    selectedTextEl.value = await readActiveTabSelection(tab.id);
     aiSummaryEl.value = '';
     titleOverrideEl.value = '';
     setStatus('Current tab loaded');
@@ -465,8 +595,10 @@ serverUrlEl.addEventListener('change', async () => {
 
 authTokenEl.addEventListener('change', async () => {
   await setStoredAuthToken(authTokenEl.value);
+  await loadVaultPathSettings();
 });
 
+vaultPathBtn.addEventListener('click', saveVaultPathSettings);
 aiSummaryBtn.addEventListener('click', runAiSummary);
 previewBtn.addEventListener('click', runPreview);
 saveBtn.addEventListener('click', runSave);
@@ -478,5 +610,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     serverUrlEl.value = savedServerUrl;
   }
   authTokenEl.value = await getStoredAuthToken();
+  vaultPathEl.value = await getStoredVaultPath();
+  await loadVaultPathSettings();
   loadCurrentTab();
 });

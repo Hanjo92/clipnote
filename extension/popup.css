@@ -71,6 +71,12 @@ body {
   gap: 8px;
 }
 
+.inline-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 input,
 textarea,
 select,
@@ -130,6 +136,12 @@ button.secondary {
 }
 
 button.inline-action {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+#aiSummaryLanguage {
+  max-width: 92px;
   padding: 6px 8px;
   font-size: 12px;
 }

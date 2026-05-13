@@ -169,6 +169,58 @@ class ClipnoteServerSecurityTest(unittest.TestCase):
         self.assertTrue(data["ok"])
         run.assert_called_once()
 
+    def test_settings_returns_current_trusted_vault_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault_path = Path(tmp)
+            with running_server(vault_path) as server:
+                status, data = post_json(
+                    server,
+                    "/settings",
+                    {},
+                    origin=clipnote_server.DEFAULT_ORIGIN,
+                    token="secret",
+                )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["vaultPath"], str(vault_path.resolve()))
+
+    def test_settings_rejects_non_directory_vault_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault_path = Path(tmp)
+            missing = vault_path / "missing"
+            with running_server(vault_path) as server:
+                status, data = post_json(
+                    server,
+                    "/settings",
+                    {"vaultPath": str(missing)},
+                    origin=clipnote_server.DEFAULT_ORIGIN,
+                    token="secret",
+                )
+
+        self.assertEqual(status, 400)
+        self.assertEqual(data["error"], "bad_request")
+
+    def test_settings_updates_server_trusted_vault_path(self):
+        with tempfile.TemporaryDirectory() as first_tmp, tempfile.TemporaryDirectory() as second_tmp:
+            first = Path(first_tmp)
+            second = Path(second_tmp)
+            with running_server(first) as server:
+                status, data = post_json(
+                    server,
+                    "/settings",
+                    {"vaultPath": str(second)},
+                    origin=clipnote_server.DEFAULT_ORIGIN,
+                    token="secret",
+                )
+
+                current = Path(server.vault_path)
+
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["vaultPath"], str(second.resolve()))
+        self.assertEqual(current, second.resolve())
+
     def test_internal_exception_details_are_not_returned_to_client(self):
         with tempfile.TemporaryDirectory() as tmp:
             secret_path = str(Path(tmp) / "secret.md")

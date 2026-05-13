@@ -115,6 +115,15 @@ class ExtensionAiSummaryTest(unittest.TestCase):
 
         self.assertIn('id="aiSummary"', html)
         self.assertIn('id="aiSummaryBtn"', html)
+        self.assertIn('id="aiSummaryLanguage"', html)
+        self.assertIn('value="ko"', html)
+        self.assertIn('value="original"', html)
+
+    def test_popup_ui_exposes_vault_path_settings(self):
+        html = (ROOT / "extension" / "popup.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="vaultPath"', html)
+        self.assertIn('id="vaultPathBtn"', html)
 
     def test_manifest_uses_scripting_permission_for_page_body_fallback(self):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
@@ -129,16 +138,84 @@ class ExtensionAiSummaryTest(unittest.TestCase):
             elements.titleOverride.value = ' Optional title ';
             elements.selectedText.value = ' selected excerpt ';
             elements.aiSummary.value = ' on-device summary ';
+            elements.vaultPath.value = '/Users/song/Obsidian/AI';
 
             const payload = payloadFromForm();
 
             assert.strictEqual(payload.summaryOverride, 'on-device summary');
+            assert.strictEqual(Object.hasOwn(payload, 'vaultPath'), false);
             console.log(JSON.stringify(payload));
             """
         )
 
         payload = json.loads(output)
         self.assertEqual(payload["summaryOverride"], "on-device summary")
+        self.assertNotIn("vaultPath", payload)
+
+    def test_load_current_tab_populates_selected_text_from_active_tab_selection(self):
+        output = run_popup_script(
+            """
+            fetch = async () => ({
+              ok: true,
+              status: 200,
+              async text() {
+                return JSON.stringify({
+                  ok: true,
+                  preview: {
+                    title: 'Example',
+                    kind: 'links',
+                    source: 'example.com',
+                    path: 'Links/Example.md',
+                    relativePath: 'Links/Example.md',
+                    tags: [],
+                    summary: 'Summary',
+                    duplicateUrls: [],
+                    duplicateTitles: [],
+                  },
+                });
+              },
+            });
+            chrome.scripting.executeScript = async (options) => {
+              assert.strictEqual(options.target.tabId, 7);
+              return [{ result: ' selected text from page ' }];
+            };
+
+            await loadCurrentTab();
+
+            assert.strictEqual(elements.selectedText.value, 'selected text from page');
+            console.log(elements.selectedText.value);
+            """
+        )
+
+        self.assertEqual(output, "selected text from page")
+
+    def test_save_vault_path_settings_posts_to_settings_endpoint(self):
+        output = run_popup_script(
+            """
+            elements.serverUrl.value = 'http://127.0.0.1:8765';
+            elements.authToken.value = 'secret';
+            elements.vaultPath.value = ' /Users/song/Obsidian/AI ';
+            fetch = async (url, options) => {
+              assert.strictEqual(url, 'http://127.0.0.1:8765/settings');
+              assert.strictEqual(options.headers['X-Clipnote-Token'], 'secret');
+              assert.strictEqual(JSON.parse(options.body).vaultPath, '/Users/song/Obsidian/AI');
+              return {
+                ok: true,
+                status: 200,
+                async text() {
+                  return JSON.stringify({ ok: true, vaultPath: '/Users/song/Obsidian/AI' });
+                },
+              };
+            };
+
+            await saveVaultPathSettings();
+
+            assert.strictEqual(elements.vaultPath.value, '/Users/song/Obsidian/AI');
+            console.log(elements.vaultPath.value);
+            """
+        )
+
+        self.assertEqual(output, "/Users/song/Obsidian/AI")
 
     def test_ai_summary_source_prefers_selected_text(self):
         output = run_popup_script(
@@ -233,6 +310,95 @@ class ExtensionAiSummaryTest(unittest.TestCase):
         )
 
         self.assertEqual(output, "On-device summary")
+
+    def test_original_summary_language_does_not_call_translator(self):
+        output = run_popup_script(
+            """
+            elements.aiSummaryLanguage.value = 'original';
+            elements.selectedText.value = 'Original page text';
+            Translator = {
+              async create() {
+                throw new Error('translator should not be created for original summaries');
+              },
+            };
+            Summarizer = {
+              async availability() {
+                return 'available';
+              },
+              async create() {
+                return {
+                  async summarize() {
+                    return 'English summary';
+                  },
+                  destroy() {},
+                };
+              },
+            };
+
+            await runAiSummary();
+
+            assert.strictEqual(elements.aiSummary.value, 'English summary');
+            console.log(elements.aiSummary.value);
+            """
+        )
+
+        self.assertEqual(output, "English summary")
+
+    def test_korean_summary_language_translates_summary(self):
+        output = run_popup_script(
+            """
+            const order = [];
+            elements.aiSummaryLanguage.value = 'ko';
+            elements.selectedText.value = 'Original page text';
+            Summarizer = {
+              async availability() {
+                order.push('summarizerAvailability');
+                return 'available';
+              },
+              async create() {
+                order.push('summarizerCreate');
+                return {
+                  async summarize() {
+                    order.push('summarize');
+                    return 'English summary';
+                  },
+                  destroy() {},
+                };
+              },
+            };
+            Translator = {
+              async availability(options) {
+                order.push(options.sourceLanguage + ':' + options.targetLanguage + ':availability');
+                return 'available';
+              },
+              async create(options) {
+                order.push(options.sourceLanguage + ':' + options.targetLanguage + ':create');
+                return {
+                  async translate(text) {
+                    order.push('translate:' + text);
+                    return '한국어 요약';
+                  },
+                  destroy() {},
+                };
+              },
+            };
+
+            await runAiSummary();
+
+            assert.strictEqual(elements.aiSummary.value, '한국어 요약');
+            assert.deepStrictEqual(order, [
+              'en:ko:availability',
+              'en:ko:create',
+              'summarizerAvailability',
+              'summarizerCreate',
+              'summarize',
+              'translate:English summary',
+            ]);
+            console.log(elements.aiSummary.value);
+            """
+        )
+
+        self.assertEqual(output, "한국어 요약")
 
     def test_ai_summary_button_creates_summarizer_before_body_fallback(self):
         output = run_popup_script(

@@ -4,6 +4,7 @@ This is the fastest way to get the extension working locally.
 
 Requirement:
 - Chrome 127 or newer
+- Chrome 138 or newer for built-in AI summary and translation
 
 ## 1) Start the local server
 
@@ -13,6 +14,12 @@ python3 clipnote_server.py
 ```
 
 Leave this terminal running. The server prints an `auth token`; copy it for the extension popup.
+
+If you already know the vault path, you can set the startup default:
+
+```bash
+python3 clipnote_server.py --vault-path "/Users/song/path/to/Obsidian vault"
+```
 
 ---
 
@@ -47,13 +54,15 @@ Expected permission shape:
 1. Open any article or paper page
 2. Click the clipnote extension icon
 3. Paste the server `auth token` into the popup field
-4. Click **Preview**
-5. Confirm that the popup:
+4. Set **Vault path** to your Obsidian vault folder and click **Set**
+5. Click **Preview**
+6. Confirm that the popup:
    - loads the current tab URL
+   - fills **Selected text** when page text is highlighted
    - shows a preview
    - shows duplicates if they exist
-6. Click **Save**
-7. Confirm the note saves and opens
+7. Click **Save**
+8. Confirm the note saves and opens
 
 ---
 
@@ -81,9 +90,10 @@ Expected permission shape:
 
 ### Page text
 1. Highlight a sentence on the page
-2. Right-click
-3. Click **Preview page in clipnote** or **Save page to clipnote**
-4. Confirm the text appears in the note under:
+2. Click the clipnote extension icon
+3. Confirm **Selected text** is filled
+4. Click **Preview** or **Save**
+5. Confirm the text appears in the note under:
 
 ```md
 ## Selected excerpt
@@ -104,11 +114,12 @@ Chrome built-in AI summaries require a Chrome version/profile where the Summariz
 1. Open an article page
 2. Highlight text, or leave nothing highlighted to use the visible page body
 3. Click the clipnote extension icon
-4. Click **AI Summary**
-5. Confirm the generated text appears in **AI summary**
-6. Click **Preview** or **Save** to use that summary in the note
+4. Choose **Korean** or **Original** beside **AI Summary**
+5. Click **AI Summary**
+6. Confirm the generated text appears in **AI summary**
+7. Click **Preview** or **Save** to use that summary in the note
 
-The extracted page body stays in Chrome. Only the generated summary override is sent to the local clipnote server when you preview or save.
+The extracted page body stays in Chrome. Only the generated summary override is sent to the local clipnote server when you preview or save. Korean summaries use Chrome's built-in Translator API after summarization and expect the generated summary to be English before translating to Korean.
 
 ---
 
@@ -128,6 +139,7 @@ Check these first:
 
 - Is `clipnote_server.py` still running?
 - Did you paste the current server `auth token` into the popup?
+- Did you set **Vault path** and click **Set**?
 - Did you reload the extension after changes?
 - Is the popup server URL set to `http://127.0.0.1:8765`?
 - Server URL accepts only `http://127.0.0.1:8765` or `http://localhost:8765`.
