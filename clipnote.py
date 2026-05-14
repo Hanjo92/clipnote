@@ -21,7 +21,7 @@ from urllib.parse import ParseResult, parse_qs, urljoin, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 import xml.etree.ElementTree as ET
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 OBSIDIAN_CONFIG = Path.home() / "Library/Application Support/obsidian/obsidian.json"
 USER_AGENT = f"clipnote/{__version__} (+OpenClaw MVP)"
