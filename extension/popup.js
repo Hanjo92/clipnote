@@ -2,6 +2,7 @@ const statusEl = document.getElementById('status');
 const noticeEl = document.getElementById('notice');
 const serverUrlEl = document.getElementById('serverUrl');
 const authTokenEl = document.getElementById('authToken');
+const authTokenClearBtn = document.getElementById('authTokenClearBtn');
 const vaultPathEl = document.getElementById('vaultPath');
 const urlEl = document.getElementById('url');
 const selectedTextEl = document.getElementById('selectedText');
@@ -27,6 +28,7 @@ const resultDuplicateTitlesEl = document.getElementById('resultDuplicateTitles')
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:8765';
 const REQUEST_TIMEOUT_MS = 15000;
 const AI_SUMMARY_INPUT_LIMIT = 12000;
+const PENDING_PREVIEW_TTL_MS = 2 * 60 * 1000;
 const ALLOWED_SERVER_HOSTS = new Set(['127.0.0.1', 'localhost']);
 const ALLOWED_SERVER_PORT = '8765';
 let openButtonMode = 'open';
@@ -47,6 +49,7 @@ function setNotice(message = '', kind = 'info') {
 }
 
 function setBusy(isBusy) {
+  authTokenClearBtn.disabled = isBusy;
   vaultPathBtn.disabled = isBusy;
   aiSummaryBtn.disabled = isBusy;
   previewBtn.disabled = isBusy;
@@ -97,6 +100,10 @@ async function getStoredAuthToken() {
 
 async function setStoredAuthToken(value) {
   await chrome.storage.local.set({ aiNoteAuthToken: value.trim() });
+}
+
+async function clearStoredAuthToken() {
+  await chrome.storage.local.remove(['aiNoteAuthToken']);
 }
 
 async function getStoredVaultPath() {
@@ -385,6 +392,13 @@ async function saveVaultPathSettings() {
   }
 }
 
+async function clearAuthToken() {
+  authTokenEl.value = '';
+  await clearStoredAuthToken();
+  setStatus('Auth token cleared');
+  setNotice('Auth token cleared from this browser profile.', 'success');
+}
+
 function renderList(listEl, items, emptyText) {
   listEl.innerHTML = '';
   if (!items.length) {
@@ -558,14 +572,16 @@ async function loadCurrentTab() {
     const stored = await chrome.storage.local.get(['aiNotePendingPreview']);
     const pending = stored.aiNotePendingPreview;
     if (pending?.url) {
-      urlEl.value = pending.url;
-      selectedTextEl.value = pending.selectedText || '';
-      aiSummaryEl.value = '';
-      titleOverrideEl.value = '';
       await chrome.storage.local.remove(['aiNotePendingPreview']);
-      setStatus('Loaded from context menu preview');
-      await runPreview();
-      return;
+      const pendingAge = Date.now() - Number(pending.at || 0);
+      if (Number.isFinite(pendingAge) && pendingAge >= 0 && pendingAge <= PENDING_PREVIEW_TTL_MS) {
+        urlEl.value = pending.url;
+        selectedTextEl.value = pending.selectedText || '';
+        aiSummaryEl.value = '';
+        titleOverrideEl.value = '';
+        setStatus('Loaded from context menu preview');
+        return;
+      }
     }
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab || !tab.url) {
@@ -577,7 +593,6 @@ async function loadCurrentTab() {
     aiSummaryEl.value = '';
     titleOverrideEl.value = '';
     setStatus('Current tab loaded');
-    await runPreview();
   } catch (error) {
     setStatus(error.message || 'Failed to load current tab', true);
   }
@@ -598,6 +613,7 @@ authTokenEl.addEventListener('change', async () => {
   await loadVaultPathSettings();
 });
 
+authTokenClearBtn.addEventListener('click', clearAuthToken);
 vaultPathBtn.addEventListener('click', saveVaultPathSettings);
 aiSummaryBtn.addEventListener('click', runAiSummary);
 previewBtn.addEventListener('click', runPreview);

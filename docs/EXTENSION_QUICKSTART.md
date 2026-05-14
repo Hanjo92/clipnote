@@ -71,6 +71,7 @@ Expected permission shape:
 ### Preview a page
 - Right-click the page
 - Click **Preview page in clipnote**
+- Confirm the URL/selection in the popup, then click **Preview**
 
 ### Save a page
 - Right-click the page
@@ -79,6 +80,7 @@ Expected permission shape:
 ### Preview a link
 - Right-click a link
 - Click **Preview link in clipnote**
+- Confirm the URL/selection in the popup, then click **Preview**
 
 ### Save a link
 - Right-click a link

@@ -29,6 +29,7 @@ Host permissions are limited to:
 ## Data Flow
 
 - Preview/save sends the page URL, note kind, selected text, title override, and optional generated summary override to the local clipnote server.
+- Opening the popup loads the current tab details locally; the local server is contacted only after an explicit **Preview** or **Save** action.
 - **Selected text** is sent to the local server when previewing or saving so it can be written under `## Selected excerpt`.
 - **AI page-body fallback** runs only after the user clicks **AI Summary**. The page body is read in Chrome for on-device summarization and is not sent to the local server.
 - **AI summary override** is sent to the local server only after the user clicks **Preview** or **Save**.
@@ -37,7 +38,7 @@ Host permissions are limited to:
 ## Security Notes
 
 - Keep the auth token private. With the token, a local client can preview/save notes and update the trusted vault path.
-- The server fetches user-provided `http(s)` URLs from the local machine. For broader public distribution, consider blocking loopback, private network, link-local, and metadata IP ranges.
+- The server rejects loopback, localhost, private-network, link-local, multicast, reserved, and unresolved redirect targets before fetching user-provided URLs.
 - The trusted vault path setting accepts existing directories. For broader public distribution, consider requiring an Obsidian vault marker such as `.obsidian`.
 
 ## Version

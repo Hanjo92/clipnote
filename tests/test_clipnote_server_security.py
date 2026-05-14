@@ -78,6 +78,39 @@ class ClipnoteServerSecurityTest(unittest.TestCase):
         self.assertEqual(data["error"], "unauthorized")
         prepare.assert_not_called()
 
+    def test_oversized_unauthorized_body_is_rejected_before_auth_body_drain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with running_server(Path(tmp)) as server:
+                server.max_json_body_bytes = 32
+                with mock.patch.object(clipnote_server, "prepare_preview", return_value={"ok": True}) as prepare:
+                    status, data = post_json(
+                        server,
+                        "/preview",
+                        {"url": "https://example.com/" + ("x" * 80)},
+                        origin=clipnote_server.DEFAULT_ORIGIN,
+                    )
+
+        self.assertEqual(status, 413)
+        self.assertEqual(data["error"], "request_too_large")
+        prepare.assert_not_called()
+
+    def test_oversized_forbidden_origin_body_is_rejected_before_origin_body_drain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with running_server(Path(tmp)) as server:
+                server.max_json_body_bytes = 32
+                with mock.patch.object(clipnote_server, "prepare_preview", return_value={"ok": True}) as prepare:
+                    status, data = post_json(
+                        server,
+                        "/preview",
+                        {"url": "https://example.com/" + ("x" * 80)},
+                        origin="chrome-extension://not-clipnote",
+                        token="secret",
+                    )
+
+        self.assertEqual(status, 413)
+        self.assertEqual(data["error"], "request_too_large")
+        prepare.assert_not_called()
+
     def test_client_supplied_vault_path_is_rejected_before_save_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             with running_server(Path(tmp)) as server:
