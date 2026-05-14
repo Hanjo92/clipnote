@@ -26,6 +26,8 @@ Host permissions are limited to:
 - `http://127.0.0.1:8765/*`
 - `http://localhost:8765/*`
 
+The manifest includes a fixed public `key` to keep the unpacked extension ID stable for the local server Origin allowlist. This is not a private signing key.
+
 ## Data Flow
 
 - Preview/save sends the page URL, note kind, selected text, title override, and optional generated summary override to the local clipnote server.

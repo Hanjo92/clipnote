@@ -139,7 +139,7 @@ class ExtensionAiSummaryTest(unittest.TestCase):
             elements.titleOverride.value = ' Optional title ';
             elements.selectedText.value = ' selected excerpt ';
             elements.aiSummary.value = ' on-device summary ';
-            elements.vaultPath.value = '/Users/song/Obsidian/AI';
+            elements.vaultPath.value = '/tmp/clipnote-vault';
 
             const payload = payloadFromForm();
 
@@ -283,28 +283,28 @@ class ExtensionAiSummaryTest(unittest.TestCase):
             """
             elements.serverUrl.value = 'http://127.0.0.1:8765';
             elements.authToken.value = 'secret';
-            elements.vaultPath.value = ' /Users/song/Obsidian/AI ';
+            elements.vaultPath.value = ' /tmp/clipnote-vault ';
             fetch = async (url, options) => {
               assert.strictEqual(url, 'http://127.0.0.1:8765/settings');
               assert.strictEqual(options.headers['X-Clipnote-Token'], 'secret');
-              assert.strictEqual(JSON.parse(options.body).vaultPath, '/Users/song/Obsidian/AI');
+              assert.strictEqual(JSON.parse(options.body).vaultPath, '/tmp/clipnote-vault');
               return {
                 ok: true,
                 status: 200,
                 async text() {
-                  return JSON.stringify({ ok: true, vaultPath: '/Users/song/Obsidian/AI' });
+                  return JSON.stringify({ ok: true, vaultPath: '/tmp/clipnote-vault' });
                 },
               };
             };
 
             await saveVaultPathSettings();
 
-            assert.strictEqual(elements.vaultPath.value, '/Users/song/Obsidian/AI');
+            assert.strictEqual(elements.vaultPath.value, '/tmp/clipnote-vault');
             console.log(elements.vaultPath.value);
             """
         )
 
-        self.assertEqual(output, "/Users/song/Obsidian/AI")
+        self.assertEqual(output, "/tmp/clipnote-vault")
 
     def test_clear_auth_token_removes_stored_token(self):
         output = run_popup_script(
