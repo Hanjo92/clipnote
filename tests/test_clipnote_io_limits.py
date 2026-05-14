@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import socket
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from urllib.error import HTTPError
 from unittest import mock
 
 import clipnote
@@ -74,10 +76,60 @@ class ClipnoteIOLimitsTest(unittest.TestCase):
         prepare.assert_not_called()
 
     def test_fetch_html_rejects_oversized_response(self):
+        public_addr = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
         with mock.patch.object(clipnote, "MAX_FETCH_BYTES", 8, create=True):
-            with mock.patch.object(clipnote, "urlopen", return_value=FakeResponse(b"012345678")):
-                with self.assertRaisesRegex(ValueError, "too large"):
-                    clipnote.fetch_html("https://example.com/large")
+            with mock.patch.object(socket, "getaddrinfo", return_value=[public_addr]):
+                with mock.patch.object(clipnote, "open_url_once", return_value=FakeResponse(b"012345678")):
+                    with self.assertRaisesRegex(ValueError, "too large"):
+                        clipnote.fetch_html("https://example.com/large")
+
+    def test_fetch_html_rejects_loopback_url_before_request(self):
+        with mock.patch.object(clipnote, "open_url_once", return_value=FakeResponse(b"private")) as opener:
+            with self.assertRaisesRegex(ValueError, "URL host is not allowed"):
+                clipnote.fetch_html("http://127.0.0.1:8080/admin")
+
+        opener.assert_not_called()
+
+    def test_fetch_html_rejects_localhost_before_request(self):
+        with mock.patch.object(clipnote, "open_url_once", return_value=FakeResponse(b"private")) as opener:
+            with self.assertRaisesRegex(ValueError, "URL host is not allowed"):
+                clipnote.fetch_html("http://localhost:8080/admin")
+
+        opener.assert_not_called()
+
+    def test_fetch_html_rejects_dns_that_resolves_to_private_ip(self):
+        private_addr = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 443))
+        with mock.patch.object(socket, "getaddrinfo", return_value=[private_addr]):
+            with mock.patch.object(clipnote, "open_url_once", return_value=FakeResponse(b"private")) as opener:
+                with self.assertRaisesRegex(ValueError, "URL host is not allowed"):
+                    clipnote.fetch_html("https://internal.example/")
+
+        opener.assert_not_called()
+
+    def test_fetch_html_rejects_redirect_to_private_url(self):
+        public_addr = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        response = FakeResponse(b"private")
+        response.geturl = lambda: "http://127.0.0.1:8765/secret"  # type: ignore[attr-defined]
+        with mock.patch.object(socket, "getaddrinfo", return_value=[public_addr]):
+            with mock.patch.object(clipnote, "open_url_once", return_value=response):
+                with self.assertRaisesRegex(ValueError, "URL host is not allowed"):
+                    clipnote.fetch_html("https://example.com/redirect")
+
+    def test_fetch_html_revalidates_redirect_location_before_following(self):
+        public_addr = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        redirect = HTTPError(
+            "https://example.com/redirect",
+            302,
+            "Found",
+            {"Location": "http://127.0.0.1:8765/secret"},
+            None,
+        )
+        with mock.patch.object(socket, "getaddrinfo", return_value=[public_addr]):
+            with mock.patch.object(clipnote, "open_url_once", side_effect=redirect) as opener:
+                with self.assertRaisesRegex(ValueError, "URL host is not allowed"):
+                    clipnote.fetch_html("https://example.com/redirect")
+
+        opener.assert_called_once()
 
     def test_preview_timeout_returns_timeout_error(self):
         with tempfile.TemporaryDirectory() as tmp:

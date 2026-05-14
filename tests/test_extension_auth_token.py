@@ -25,6 +25,11 @@ class ExtensionAuthTokenTest(unittest.TestCase):
 
         self.assertIn('id="authToken"', html)
 
+    def test_popup_exposes_auth_token_clear_control(self):
+        html = (ROOT / "extension" / "popup.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="authTokenClearBtn"', html)
+
     def test_popup_sends_clipnote_auth_header(self):
         script = (ROOT / "extension" / "popup.js").read_text(encoding="utf-8")
 

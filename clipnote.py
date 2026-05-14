@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
 import shutil
+import socket
 import sys
 import tempfile
 import unicodedata
@@ -15,8 +17,8 @@ from datetime import date, datetime, timedelta
 from html import unescape
 from pathlib import Path
 from urllib.error import URLError, HTTPError
-from urllib.parse import parse_qs, urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import ParseResult, parse_qs, urljoin, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 import xml.etree.ElementTree as ET
 
 __version__ = "0.1.0"
@@ -27,6 +29,9 @@ ARXIV_API = "https://export.arxiv.org/api/query?id_list={id_list}"
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
 MAX_FETCH_BYTES = int(os.environ.get("CLIPNOTE_MAX_FETCH_BYTES", str(2 * 1024 * 1024)))
 FETCH_CHUNK_BYTES = 64 * 1024
+MAX_FETCH_REDIRECTS = 5
+REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+BLOCKED_FETCH_HOSTS = {"localhost"}
 TITLE_PATTERNS = [
     re.compile(r'<meta[^>]+name=["\']citation_title["\'][^>]+content=["\'](.*?)["\']', re.I),
     re.compile(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](.*?)["\']', re.I),
@@ -138,6 +143,14 @@ class ArxivMeta:
     categories: list[str]
 
 
+class NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+NO_REDIRECT_OPENER = build_opener(NoRedirectHandler)
+
+
 def eprint(*args: object) -> None:
     print(*args, file=sys.stderr)
 
@@ -176,15 +189,74 @@ def read_text(path: Path) -> str:
 
 
 def fetch_html(url: str) -> str:
-    req = Request(url, headers={"User-Agent": USER_AGENT})
-    with urlopen(req, timeout=15) as resp:
+    with open_safe_url(url, timeout=15) as resp:
         return read_response_text(resp)
 
 
 def fetch_text(url: str) -> str:
-    req = Request(url, headers={"User-Agent": USER_AGENT})
-    with urlopen(req, timeout=15) as resp:
+    with open_safe_url(url, timeout=15) as resp:
         return read_response_text(resp)
+
+
+def open_safe_url(url: str, timeout: int = 15):
+    current_url = url
+    for _ in range(MAX_FETCH_REDIRECTS + 1):
+        validate_fetch_url(current_url)
+        req = Request(current_url, headers={"User-Agent": USER_AGENT})
+        try:
+            resp = open_url_once(req, timeout=timeout)
+        except HTTPError as exc:
+            location = exc.headers.get("Location", "")
+            if exc.code in REDIRECT_STATUS_CODES and location:
+                current_url = urljoin(current_url, location)
+                validate_fetch_url(current_url)
+                continue
+            raise
+        final_url = getattr(resp, "geturl", lambda: current_url)()
+        validate_fetch_url(final_url)
+        return resp
+    raise ValueError("Too many redirects while fetching URL")
+
+
+def open_url_once(req: Request, timeout: int = 15):
+    return NO_REDIRECT_OPENER.open(req, timeout=timeout)
+
+
+def validate_fetch_url(url: str) -> None:
+    parsed = validate_http_url(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL must be an absolute http(s) URL")
+    normalized_host = hostname.rstrip(".").casefold()
+    if normalized_host in BLOCKED_FETCH_HOSTS or normalized_host.endswith(".localhost"):
+        raise ValueError("URL host is not allowed")
+    if is_blocked_ip_literal(normalized_host):
+        raise ValueError("URL host is not allowed")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise URLError(f"Could not resolve URL host: {hostname}") from exc
+    for info in infos:
+        address = info[4][0].split("%", 1)[0]
+        if is_blocked_ip_literal(address):
+            raise ValueError("URL host is not allowed")
+
+
+def is_blocked_ip_literal(value: str) -> bool:
+    try:
+        address = ipaddress.ip_address(value.split("%", 1)[0])
+    except ValueError:
+        return False
+    return (
+        address.is_loopback
+        or address.is_private
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+        or not address.is_global
+    )
 
 
 def read_response_text(resp, max_bytes: int | None = None) -> str:
@@ -493,10 +565,11 @@ def validate_note_date_text(value: str) -> None:
         raise ValueError("Date must use YYYY-MM-DD")
 
 
-def validate_http_url(url: str) -> None:
+def validate_http_url(url: str) -> ParseResult:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("URL must be an absolute http(s) URL")
+    return parsed
 
 
 def collect_recap_items(vault_path: Path, start: date, end: date) -> list[RecapItem]:

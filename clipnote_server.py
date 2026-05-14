@@ -237,6 +237,10 @@ class AiNoteHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
+            body_error = self.body_size_error()
+            if body_error:
+                self.respond_error(body_error)
+                return
             trust_error = self.trust_error()
             if trust_error:
                 self.discard_request_body()
@@ -315,13 +319,12 @@ class AiNoteHandler(BaseHTTPRequestHandler):
         self.respond_json({"ok": False, "error": exc.error, "message": exc.message}, status=exc.status)
 
     def read_json_body(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length", "0"))
+        length = self.request_content_length()
         if length <= 0:
             raise ValueError("Expected JSON request body")
-        max_length = int(getattr(self.server, "max_json_body_bytes", MAX_JSON_BODY_BYTES))
-        if length > max_length:
-            self.close_connection = True
-            raise ClientError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "request_too_large", "JSON request body is too large")
+        body_error = self.body_size_error()
+        if body_error:
+            raise body_error
         body = self.rfile.read(length)
         try:
             payload = json.loads(body)
@@ -332,9 +335,24 @@ class AiNoteHandler(BaseHTTPRequestHandler):
         return payload
 
     def discard_request_body(self) -> None:
-        length = int(self.headers.get("Content-Length", "0"))
+        length = self.request_content_length()
+        body_error = self.body_size_error()
+        if body_error:
+            self.close_connection = True
+            return
         if length > 0:
             self.rfile.read(length)
+
+    def request_content_length(self) -> int:
+        return int(self.headers.get("Content-Length", "0"))
+
+    def body_size_error(self) -> ClientError | None:
+        length = self.request_content_length()
+        max_length = int(getattr(self.server, "max_json_body_bytes", MAX_JSON_BODY_BYTES))
+        if length > max_length:
+            self.close_connection = True
+            return ClientError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "request_too_large", "JSON request body is too large")
+        return None
 
     def respond_json(self, payload: dict[str, Any], status: int = HTTPStatus.OK) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")

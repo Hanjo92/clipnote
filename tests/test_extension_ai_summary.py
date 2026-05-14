@@ -46,6 +46,7 @@ function element(id) {
 
 const context = {
   AbortController,
+  Date,
   Error,
   JSON,
   Promise,
@@ -189,6 +190,94 @@ class ExtensionAiSummaryTest(unittest.TestCase):
 
         self.assertEqual(output, "selected text from page")
 
+    def test_load_current_tab_does_not_auto_preview_active_tab(self):
+        output = run_popup_script(
+            """
+            let fetchCalls = 0;
+            fetch = async () => {
+              fetchCalls += 1;
+              throw new Error('preview should wait for explicit click');
+            };
+            chrome.scripting.executeScript = async () => [{ result: ' selected text from page ' }];
+
+            await loadCurrentTab();
+
+            assert.strictEqual(elements.url.value, 'https://example.com/article');
+            assert.strictEqual(elements.selectedText.value, 'selected text from page');
+            assert.strictEqual(fetchCalls, 0);
+            console.log('loaded');
+            """
+        )
+
+        self.assertEqual(output, "loaded")
+
+    def test_pending_preview_loads_fields_without_auto_preview(self):
+        output = run_popup_script(
+            """
+            const pending = {
+              url: 'https://example.com/from-menu',
+              selectedText: 'selected from context menu',
+              at: Date.now(),
+            };
+            let fetchCalls = 0;
+            let removedKey = '';
+            fetch = async () => {
+              fetchCalls += 1;
+              throw new Error('preview should wait for explicit click');
+            };
+            chrome.storage.local.get = async (keys) => {
+              if (Array.isArray(keys) && keys.includes('aiNotePendingPreview')) {
+                return { aiNotePendingPreview: pending };
+              }
+              return {};
+            };
+            chrome.storage.local.remove = async (keys) => {
+              removedKey = Array.isArray(keys) ? keys.join(',') : String(keys);
+            };
+
+            await loadCurrentTab();
+
+            assert.strictEqual(elements.url.value, 'https://example.com/from-menu');
+            assert.strictEqual(elements.selectedText.value, 'selected from context menu');
+            assert.strictEqual(fetchCalls, 0);
+            assert.strictEqual(removedKey, 'aiNotePendingPreview');
+            console.log('pending loaded');
+            """
+        )
+
+        self.assertEqual(output, "pending loaded")
+
+    def test_stale_pending_preview_is_discarded_without_reusing_selected_text(self):
+        output = run_popup_script(
+            """
+            const stalePending = {
+              url: 'https://old.example/private',
+              selectedText: 'stale selected secret',
+              at: Date.now() - 10 * 60 * 1000,
+            };
+            let removedKey = '';
+            chrome.storage.local.get = async (keys) => {
+              if (Array.isArray(keys) && keys.includes('aiNotePendingPreview')) {
+                return { aiNotePendingPreview: stalePending };
+              }
+              return {};
+            };
+            chrome.storage.local.remove = async (keys) => {
+              removedKey = Array.isArray(keys) ? keys.join(',') : String(keys);
+            };
+            chrome.scripting.executeScript = async () => [{ result: ' fresh selected text ' }];
+
+            await loadCurrentTab();
+
+            assert.strictEqual(elements.url.value, 'https://example.com/article');
+            assert.strictEqual(elements.selectedText.value, 'fresh selected text');
+            assert.strictEqual(removedKey, 'aiNotePendingPreview');
+            console.log(elements.selectedText.value);
+            """
+        )
+
+        self.assertEqual(output, "fresh selected text")
+
     def test_save_vault_path_settings_posts_to_settings_endpoint(self):
         output = run_popup_script(
             """
@@ -216,6 +305,25 @@ class ExtensionAiSummaryTest(unittest.TestCase):
         )
 
         self.assertEqual(output, "/Users/song/Obsidian/AI")
+
+    def test_clear_auth_token_removes_stored_token(self):
+        output = run_popup_script(
+            """
+            let removedKey = '';
+            chrome.storage.local.remove = async (keys) => {
+              removedKey = Array.isArray(keys) ? keys.join(',') : String(keys);
+            };
+            elements.authToken.value = 'secret';
+
+            await clearAuthToken();
+
+            assert.strictEqual(elements.authToken.value, '');
+            assert.strictEqual(removedKey, 'aiNoteAuthToken');
+            console.log('cleared');
+            """
+        )
+
+        self.assertEqual(output, "cleared")
 
     def test_ai_summary_source_prefers_selected_text(self):
         output = run_popup_script(
