@@ -136,7 +136,7 @@ The server prints an `auth token`. Paste that token into the extension popup bef
 Default allowed origin:
 - `chrome-extension://dojaomlgohpahfibbdbjjnkkpbdoljnf`
 
-The extension manifest includes a fixed key, so unpacked loads keep the same extension ID.
+The extension manifest includes a fixed public key, so unpacked loads keep the same extension ID. This is not a private signing key.
 
 ### Load the extension
 Requires Chrome 127 or newer.
@@ -247,3 +247,9 @@ Right now this project is still an MVP, but the main workflow is already usable:
 - source alias/person normalization
 - better keyword weighting in recap compare
 - optional arXiv affiliation handling
+
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE).

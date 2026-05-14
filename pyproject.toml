@@ -8,10 +8,14 @@ version = "0.1.0"
 description = "Save web pages and papers into structured Markdown notes"
 readme = "README.md"
 requires-python = ">=3.9"
+license = { file = "LICENSE" }
 authors = [
   { name = "Hanjo92" }
 ]
 dependencies = []
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+]
 
 [project.scripts]
 clipnote = "clipnote:main"

@@ -18,7 +18,7 @@ Leave this terminal running. The server prints an `auth token`; copy it for the 
 If you already know the vault path, you can set the startup default:
 
 ```bash
-python3 clipnote_server.py --vault-path "/Users/song/path/to/Obsidian vault"
+python3 clipnote_server.py --vault-path "~/path/to/Obsidian vault"
 ```
 
 ---
