@@ -52,14 +52,4 @@ Before packaging, keep these versions aligned unless the extension is intentiona
 
 ## Smoke Test
 
-1. Start `clipnote-server`.
-2. Load the packaged extension or unpacked `extension/` directory.
-3. Confirm the toolbar icon renders.
-4. Confirm `chrome://extensions` shows the clipnote icon.
-5. Paste the current auth token into the popup.
-6. Preview and save a normal page.
-7. Preview and save a link target.
-8. Highlight page text, use the page action, and confirm `## Selected excerpt` is saved.
-9. Save the same page twice and confirm the existing-note conflict path.
-10. Click **AI Summary** with **Korean** selected and confirm only the generated summary is used as the note summary override.
-11. Update **Vault path** in the popup and confirm preview/save writes under that trusted path.
+Before publishing, run the [manual extension smoke test](EXTENSION_SMOKE_TEST.md).
