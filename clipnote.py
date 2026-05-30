@@ -458,6 +458,20 @@ def infer_kind_from_path(path: Path) -> str:
     return "other"
 
 
+def infer_note_date_from_path(path: Path) -> date | None:
+    for part in reversed(path.parts):
+        if NOTE_DATE_PATTERN.match(part):
+            parsed = parse_note_date(part)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def validate_duplicate_lookback_days(value: int | None) -> None:
+    if value is not None and value <= 0:
+        raise ValueError("duplicate lookback days must be a positive integer")
+
+
 def slugify_filename(title: str) -> str:
     normalized = unicodedata.normalize("NFKC", title)
     normalized = re.sub(r"[/:*?\"<>|]", "", normalized)
@@ -511,11 +525,24 @@ def choose_canonical(paths: list[Path]) -> tuple[Path, dict[Path, tuple[int, lis
     return best, scored
 
 
-def scan_duplicates(vault_path: Path, title: str, url: str) -> tuple[list[Path], list[Path]]:
+def scan_duplicates(
+    vault_path: Path,
+    title: str,
+    url: str,
+    anchor_date: date | None = None,
+    lookback_days: int | None = None,
+) -> tuple[list[Path], list[Path]]:
     duplicate_urls: list[Path] = []
     duplicate_titles: list[Path] = []
     title_key = normalize_text(title)
+    cutoff = None
+    if anchor_date is not None and lookback_days is not None and lookback_days > 0:
+        cutoff = anchor_date - timedelta(days=lookback_days - 1)
     for path in iter_markdown_files(vault_path):
+        if cutoff is not None:
+            path_day = infer_note_date_from_path(path)
+            if path_day is not None and path_day < cutoff:
+                continue
         content = read_text(path)
         if url and url in content:
             duplicate_urls.append(path)
@@ -999,9 +1026,11 @@ def prepare_note(
     title_override: str | None,
     selected_text: str = "",
     summary_override: str = "",
+    duplicate_lookback_days: int | None = None,
 ) -> NoteMeta:
     validate_http_url(url)
     validate_note_date_text(note_date)
+    validate_duplicate_lookback_days(duplicate_lookback_days)
     html = fetch_html(url)
     kind = infer_kind(url, explicit_kind)
     source = infer_source(url)
@@ -1018,7 +1047,14 @@ def prepare_note(
         why_save = build_why_save(kind, source, summary)
     folder = vault_path / ("Papers" if kind == "papers" else "Links") / note_date
     filename = slugify_filename(title) + ".md"
-    duplicate_urls, duplicate_titles = scan_duplicates(vault_path, title, url)
+    anchor_day = parse_note_date(note_date)
+    duplicate_urls, duplicate_titles = scan_duplicates(
+        vault_path,
+        title,
+        url,
+        anchor_date=anchor_day,
+        lookback_days=duplicate_lookback_days,
+    )
     extra_meta = None
     if arxiv_meta:
         extra_meta = {
@@ -1158,7 +1194,14 @@ def cmd_save(args: argparse.Namespace) -> int:
     vault_path = load_vault_path(args.vault_name, args.vault_path)
     note_date = args.date or date.today().isoformat()
     try:
-        meta = prepare_note(args.url, vault_path, note_date, args.kind, args.title)
+        meta = prepare_note(
+            args.url,
+            vault_path,
+            note_date,
+            args.kind,
+            args.title,
+            duplicate_lookback_days=getattr(args, "duplicate_lookback_days", None),
+        )
     except ValueError as exc:
         eprint(str(exc))
         return 2
@@ -1286,6 +1329,7 @@ def build_parser() -> argparse.ArgumentParser:
     save.add_argument("--vault-path", help="Explicit vault path")
     save.add_argument("--dry-run", action="store_true", help="Preview without writing")
     save.add_argument("--force", action="store_true", help="Overwrite if target file exists")
+    save.add_argument("--duplicate-lookback-days", type=int, help="Only scan this many recent days for duplicate checks (default: scan the whole vault)")
     save.set_defaults(func=cmd_save)
 
     dedupe = sub.add_parser("dedupe", help="List duplicate notes by URL/title")

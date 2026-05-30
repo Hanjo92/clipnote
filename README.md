@@ -210,6 +210,7 @@ curl -X POST http://127.0.0.1:8765/preview \
 ```bash
 python3 clipnote.py save 'https://arxiv.org/abs/2604.11978' --dry-run
 python3 clipnote.py save 'https://openai.com/index/gpt-5-5-instant/' --kind links
+python3 clipnote.py save 'https://example.com/article' --duplicate-lookback-days 7
 ```
 
 ### Dedupe / cleanup

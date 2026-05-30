@@ -23,6 +23,7 @@ def save_args(vault_path: Path, **overrides):
         "vault_path": str(vault_path),
         "dry_run": False,
         "force": False,
+        "duplicate_lookback_days": None,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -117,6 +118,60 @@ class ClipnoteCliWorkflowTest(unittest.TestCase):
 
         self.assertEqual(len(by_url["https://example.com/dup"]), 2)
         self.assertTrue(any(len(paths) == 2 for paths in by_title.values()))
+
+    def test_prepare_note_default_duplicate_scan_covers_whole_vault(self):
+        html = "<html><head><title>Example Article</title></head><body></body></html>"
+        with tempfile.TemporaryDirectory() as tmp:
+            vault_path = Path(tmp)
+            old_note = vault_path / "Links" / "2026-05-01" / "Old.md"
+            old_note.parent.mkdir(parents=True)
+            old_note.write_text("# Old\n\n- Link: https://example.com/article\n", encoding="utf-8")
+
+            with mock.patch.object(clipnote, "fetch_html", return_value=html):
+                meta = clipnote.prepare_note(
+                    "https://example.com/article",
+                    vault_path,
+                    "2026-05-11",
+                    "links",
+                    None,
+                )
+
+        self.assertEqual(meta.duplicate_urls, [old_note])
+
+    def test_prepare_note_duplicate_lookback_limits_old_date_folders(self):
+        html = "<html><head><title>Example Article</title></head><body></body></html>"
+        with tempfile.TemporaryDirectory() as tmp:
+            vault_path = Path(tmp)
+            old_note = vault_path / "Links" / "2026-05-01" / "Old.md"
+            recent_note = vault_path / "Links" / "2026-05-10" / "Recent.md"
+            old_note.parent.mkdir(parents=True)
+            recent_note.parent.mkdir(parents=True)
+            for note in (old_note, recent_note):
+                note.write_text("# Note\n\n- Link: https://example.com/article\n", encoding="utf-8")
+
+            with mock.patch.object(clipnote, "fetch_html", return_value=html):
+                meta = clipnote.prepare_note(
+                    "https://example.com/article",
+                    vault_path,
+                    "2026-05-11",
+                    "links",
+                    None,
+                    duplicate_lookback_days=3,
+                )
+
+        self.assertEqual(meta.duplicate_urls, [recent_note])
+
+    def test_prepare_note_rejects_non_positive_duplicate_lookback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "duplicate lookback"):
+                clipnote.prepare_note(
+                    "https://example.com/article",
+                    Path(tmp),
+                    "2026-05-11",
+                    "links",
+                    None,
+                    duplicate_lookback_days=0,
+                )
 
     def test_cleanup_dry_run_and_apply_archive_duplicates(self):
         with tempfile.TemporaryDirectory() as tmp:
