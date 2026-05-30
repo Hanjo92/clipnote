@@ -40,3 +40,26 @@ Expected response scope for this small project:
 - close reports that require a compromised local machine, unsafe local
   configuration outside clipnote, or behavior already documented as trusted
   local operation
+
+## Repository Security Automation
+
+In-repository automation:
+
+- Dependabot checks GitHub Actions and Python packaging metadata weekly.
+- CodeQL analyzes Python and JavaScript on pull requests, pushes to `main`, and
+  a weekly schedule.
+
+Repository-level settings that are managed in GitHub rather than repository
+files:
+
+- private vulnerability reporting: enabled
+- Dependabot security updates: enabled
+- secret scanning: enabled
+- secret scanning push protection: enabled
+- secret scanning non-provider patterns: not enabled after API update; enable in
+  GitHub if the repository becomes eligible
+- secret scanning validity checks: not enabled after API update; enable in GitHub
+  if the repository becomes eligible
+
+These settings should be rechecked in GitHub's code security settings after
+repository ownership, visibility, or plan changes.
