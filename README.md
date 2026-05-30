@@ -58,6 +58,12 @@ It currently works especially well for an Obsidian vault, but the core idea is b
 - `extension/` — Chrome extension MVP
 - `CHROME_EXTENSION_PLAN.md` — extension design notes
 
+## Security
+
+Please report vulnerabilities through the [security policy](SECURITY.md). Do not
+post auth tokens, vault paths, selected text, private page URLs, or logs with
+secrets in public issues.
+
 ---
 
 ## Quick start
