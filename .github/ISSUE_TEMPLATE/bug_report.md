@@ -30,3 +30,7 @@ What did you expect instead?
 ## Notes
 
 Add logs, screenshots, or extra context here.
+
+Do not include auth tokens, vault paths, selected text, private page URLs, local
+file paths, or logs with secrets. For security vulnerabilities, use
+`SECURITY.md` instead of a public issue.
