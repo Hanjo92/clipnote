@@ -21,6 +21,8 @@ python3 -m pip wheel . -w /tmp/clipnote-wheel --no-deps
 python3 scripts/package_extension.py --output /tmp/clipnote-extension.zip
 ```
 
+- Run the [Chrome extension manual smoke test](EXTENSION_SMOKE_TEST.md).
+
 ## Package
 
 - Build the Python wheel.
