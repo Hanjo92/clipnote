@@ -2,61 +2,207 @@
 
 [![CI](https://github.com/Hanjo92/clipnote/actions/workflows/ci.yml/badge.svg)](https://github.com/Hanjo92/clipnote/actions/workflows/ci.yml)
 
-Save web pages and papers into structured Markdown notes.
+Local-first CLI and Chrome extension for saving web pages and papers as
+structured Markdown notes.
 
-clipnote is a local-first tool for turning URLs into readable notes with:
-- cleaned titles
-- summary drafts
-- tags
-- duplicate detection
-- weekly recaps
-- a Chrome extension for one-click capture
+clipnote turns a URL into a useful note: cleaned title, summary draft, tags,
+source metadata, duplicate warnings, and optional selected-text excerpts. It is
+especially useful with Obsidian vaults, but the output is plain Markdown.
 
-It currently works especially well for an Obsidian vault, but the core idea is broader: **URL → structured Markdown note**.
+## Highlights
 
----
+- Save blog posts, product updates, changelog pages, and arXiv papers.
+- Infer `papers` vs `links` and write notes into date-based folders.
+- Enrich arXiv notes with id, publication date, authors, and categories.
+- Preview before saving, including duplicate URL/title matches.
+- Capture from Chrome with popup and context-menu actions.
+- Use selected page text as a saved excerpt.
+- Optionally use Chrome built-in AI APIs for summary overrides.
+- Generate weekly recap notes and clean up duplicates later.
 
-## What it does
+## Quick Start
 
-### Save pages and papers
-- save blog posts, changelog pages, product updates, and arXiv papers
-- infer `papers` vs `links`
-- generate a Markdown note in date-based folders
-- warn on duplicate URL/title matches
+Clone and install:
 
-### Improve note quality automatically
-- clean noisy page titles
-- generate summary drafts and key points
-- add source-aware tags
-- support selected text as a saved excerpt
+```bash
+git clone https://github.com/Hanjo92/clipnote.git
+cd clipnote
+pipx install .
+```
 
-### Handle papers better
-- arXiv metadata enrichment
-  - arXiv id
-  - published date
-  - authors
-  - categories
-- long author lists are shortened in the header and preserved below
+For local development:
 
-### Keep the vault tidy
-- scan duplicates across the vault
-- recommend which note to keep
-- merge useful excerpts into the kept note
-- archive redundant notes
+```bash
+python3 -m pip install -e ".[dev]"
+```
 
-### Review what you saved
-- generate weekly recaps
-- compare against the previous period
-- extract highlights, recurring themes, and source breakdowns
+Save a paper:
 
----
+```bash
+clipnote save 'https://arxiv.org/abs/2604.11978' --dry-run
+clipnote save 'https://arxiv.org/abs/2604.11978'
+```
 
-## Project structure
+Save a link:
 
-- `clipnote.py` — main CLI
-- `clipnote_server.py` — local HTTP bridge for the Chrome extension
-- `extension/` — Chrome extension MVP
-- `CHROME_EXTENSION_PLAN.md` — extension design notes
+```bash
+clipnote save 'https://example.com/article' --kind links
+```
+
+Check duplicates:
+
+```bash
+clipnote cleanup --urls-only
+```
+
+Generate a weekly recap:
+
+```bash
+clipnote recap --week --compare-previous
+clipnote recap --week --compare-previous --save-note
+```
+
+## Chrome Extension
+
+The Chrome extension lets you preview, save, and open notes without switching to
+the terminal.
+
+Requires Chrome 127 or newer.
+
+Full setup guide:
+
+- [Extension quickstart](docs/EXTENSION_QUICKSTART.md)
+
+Short version:
+
+1. Start the local bridge:
+
+   ```bash
+   clipnote-server
+   ```
+
+2. Copy the printed `auth token`.
+3. Open `chrome://extensions`.
+4. Enable **Developer mode**.
+5. Click **Load unpacked** and select the repository `extension/` directory.
+6. Paste the token into the extension popup.
+7. Set **Vault path** to your Obsidian vault or notes directory.
+
+Expected unpacked extension ID:
+
+```text
+dojaomlgohpahfibbdbjjnkkpbdoljnf
+```
+
+The manifest includes a fixed public key so local unpacked installs keep the
+same extension ID for the server allowlist. This is not a private signing key.
+
+Extension actions:
+
+- Popup preview/save for the current tab
+- `Open` and `Open existing` from the popup
+- Context-menu preview/save for pages and links
+- Selected-text capture into `## Selected excerpt`
+- Optional AI Summary override using Chrome built-in AI APIs
+
+Package the extension:
+
+```bash
+python3 scripts/package_extension.py --output dist/clipnote-extension.zip
+```
+
+## CLI Reference
+
+Save:
+
+```bash
+clipnote save 'https://arxiv.org/abs/2604.11978' --dry-run
+clipnote save 'https://example.com/article' --kind links
+clipnote save 'https://example.com/article' --duplicate-lookback-days 7
+```
+
+Dedupe and cleanup:
+
+`dedupe` reports or recommends duplicate handling. `cleanup` can archive
+redundant notes when run with `--apply`.
+
+```bash
+clipnote dedupe
+clipnote dedupe --urls-only
+clipnote dedupe --recommend
+clipnote cleanup --urls-only
+clipnote cleanup --urls-only --apply
+```
+
+Recap:
+
+```bash
+clipnote recap --week
+clipnote recap --week --anchor-date 2026-05-07
+clipnote recap --week --compare-previous
+clipnote recap --week --save-note
+clipnote recap --week --save-note --dry-run
+```
+
+## Local HTTP API
+
+The extension talks to the local server at `http://127.0.0.1:8765`.
+
+Endpoints:
+
+- `GET /health`
+- `POST /settings`
+- `POST /preview`
+- `POST /save`
+- `POST /open`
+
+Example:
+
+```bash
+curl http://127.0.0.1:8765/health
+
+curl -X POST http://127.0.0.1:8765/preview \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: chrome-extension://dojaomlgohpahfibbdbjjnkkpbdoljnf' \
+  -H 'X-Clipnote-Token: <token printed by clipnote-server>' \
+  -d '{"url":"https://arxiv.org/abs/2604.11978"}'
+```
+
+## Project Layout
+
+- `clipnote.py` - main CLI and note generation logic
+- `clipnote_server.py` - authenticated local HTTP bridge
+- `extension/` - Chrome extension source
+- `scripts/package_extension.py` - extension packaging helper
+- `tests/` - CLI, server, extension, and packaging tests
+- `docs/` - extension setup and release checklists
+
+## Documentation
+
+- [Extension quickstart](docs/EXTENSION_QUICKSTART.md)
+- [Chrome extension release notes](docs/CHROME_EXTENSION_RELEASE.md)
+- [Extension manual smoke test](docs/EXTENSION_SMOKE_TEST.md)
+- [Release checklist](docs/RELEASE_CHECKLIST.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+
+## Development
+
+Run tests:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+Run syntax and packaging checks:
+
+```bash
+python3 -m py_compile clipnote.py clipnote_server.py scripts/package_extension.py
+python3 -m json.tool extension/manifest.json >/dev/null
+node --check extension/background.js
+node --check extension/popup.js
+python3 scripts/package_extension.py --output /tmp/clipnote-extension.zip
+```
 
 ## Security
 
@@ -64,198 +210,14 @@ Please report vulnerabilities through the [security policy](SECURITY.md). Do not
 post auth tokens, vault paths, selected text, private page URLs, or logs with
 secrets in public issues.
 
----
+## Status
 
-## Quick start
+clipnote is an MVP, but the main workflow is usable:
 
-### Install
-```bash
-cd ~/Projects/clipnote
-pipx install .
-```
-
-For local development:
-```bash
-python3 -m pip install -e ".[dev]"
-```
-
-To refresh an existing local install from this checkout:
-```bash
-cd ~/Projects/clipnote
-pipx install --force .
-```
-
-### 1) Save a paper
-```bash
-cd ~/Projects/clipnote
-python3 clipnote.py save 'https://arxiv.org/abs/2604.11978' --dry-run
-python3 clipnote.py save 'https://arxiv.org/abs/2604.11978'
-```
-
-### 2) Save a link
-```bash
-cd ~/Projects/clipnote
-python3 clipnote.py save 'https://openai.com/index/gpt-5-5-instant/' --dry-run
-python3 clipnote.py save 'https://openai.com/index/gpt-5-5-instant/'
-```
-
-### 3) Check duplicates
-```bash
-cd ~/Projects/clipnote
-python3 clipnote.py cleanup --urls-only
-```
-
-### 4) Generate a weekly recap
-```bash
-cd ~/Projects/clipnote
-python3 clipnote.py recap --week --compare-previous
-```
-
-### 5) Save the recap into the vault
-```bash
-cd ~/Projects/clipnote
-python3 clipnote.py recap --week --compare-previous --save-note
-```
-
-### Run tests
-```bash
-python3 -m unittest discover -s tests
-```
-
----
-
-## Chrome extension
-
-clipnote includes a Chrome extension MVP so you do not have to open a terminal every time.
-
-Quick setup guide:
-- [`docs/EXTENSION_QUICKSTART.md`](docs/EXTENSION_QUICKSTART.md)
-
-### Run the local server
-```bash
-cd ~/Projects/clipnote
-python3 clipnote_server.py
-```
-
-The server prints an `auth token`. Paste that token into the extension popup before previewing or saving.
-
-Default allowed origin:
-- `chrome-extension://dojaomlgohpahfibbdbjjnkkpbdoljnf`
-
-The extension manifest includes a fixed public key, so unpacked loads keep the same extension ID. This is not a private signing key.
-
-### Load the extension
-Requires Chrome 127 or newer.
-
-1. Open `chrome://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked**
-4. Select `~/Projects/clipnote/extension`
-5. Reload the extension after changes
-
-Expected extension ID:
-- `dojaomlgohpahfibbdbjjnkkpbdoljnf`
-
-Package a release zip:
-```bash
-python3 scripts/package_extension.py --output dist/clipnote-extension.zip
-```
-
-### Current extension flow
-- popup auto-loads the current tab URL
-- preview before saving
-- title override
-- kind override
-- duplicate visibility
-- save and auto-open note
-- `Open` / `Open existing` from the popup
-- right-click preview/save for page and link targets
-- selected text can be saved as `Selected excerpt`
-
-### Context menu actions
-- `Preview page in clipnote`
-- `Save page to clipnote`
-- `Preview link in clipnote`
-- `Save link to clipnote`
-
-If you highlight text before saving, clipnote stores it under:
-
-```md
-## Selected excerpt
-> ...
-```
-
----
-
-## Local HTTP API
-
-The extension talks to a local server.
-
-### Endpoints
-- `GET /health`
-- `POST /preview`
-- `POST /save`
-- `POST /open`
-
-### Example
-```bash
-curl http://127.0.0.1:8765/health
-
-curl -X POST http://127.0.0.1:8765/preview \
-  -H 'Content-Type: application/json' \
-  -H 'Origin: chrome-extension://dojaomlgohpahfibbdbjjnkkpbdoljnf' \
-  -H 'X-Clipnote-Token: <token printed by clipnote_server.py>' \
-  -d '{"url":"https://arxiv.org/abs/2604.11978"}'
-```
-
----
-
-## CLI reference
-
-### Save
-```bash
-python3 clipnote.py save 'https://arxiv.org/abs/2604.11978' --dry-run
-python3 clipnote.py save 'https://openai.com/index/gpt-5-5-instant/' --kind links
-python3 clipnote.py save 'https://example.com/article' --duplicate-lookback-days 7
-```
-
-### Dedupe / cleanup
-```bash
-python3 clipnote.py dedupe
-python3 clipnote.py dedupe --urls-only
-python3 clipnote.py dedupe --recommend
-python3 clipnote.py cleanup --urls-only
-python3 clipnote.py cleanup --urls-only --apply
-```
-
-### Recap
-```bash
-python3 clipnote.py recap --week
-python3 clipnote.py recap --week --anchor-date 2026-05-07
-python3 clipnote.py recap --week --compare-previous
-python3 clipnote.py recap --week --save-note
-python3 clipnote.py recap --week --save-note --dry-run
-```
-
----
-
-## Notes
-
-Right now this project is still an MVP, but the main workflow is already usable:
-- discover something worth keeping
-- preview/save it quickly
-- clean up duplicates later
-- review the week in recap form
-
----
-
-## Next ideas
-- richer body summarization
-- source alias/person normalization
-- better keyword weighting in recap compare
-- optional arXiv affiliation handling
-
----
+1. discover something worth keeping
+2. preview or save it quickly
+3. clean up duplicates later
+4. review the week in recap form
 
 ## License
 
